@@ -5,11 +5,16 @@ Exposes an Agent-to-Agent (A2A) compliant server that answers questions about
 RNLI lifeboat stations.  It uses an LLM (via Gravitee Gateway / Ollama) for
 natural-language understanding and calls the lifeboat-api service directly as
 its tool back-end.
+
+User context is passed as a JSON prefix in the message:
+  [USER_CONTEXT:{"name":"Joe Doe","email":"...","plan":"gold","visits":[...]}]
+  <actual user message>
 """
 
 import json
 import logging
 import os
+import re
 import uuid
 from typing import Any, Optional
 
@@ -44,24 +49,108 @@ logging.basicConfig(
 logger = logging.getLogger("rnli-a2a-agent")
 
 # ---------------------------------------------------------------------------
-# System prompt
+# User context extraction
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = (
+_USER_CONTEXT_PREFIX = "[USER_CONTEXT:"
+_JSON_DECODER = json.JSONDecoder()
+
+
+def extract_user_context(raw_message: str) -> tuple[Optional[dict], str]:
+    """
+    Extract the optional [USER_CONTEXT:{...}] prefix from a message.
+    Uses the JSON decoder to find the exact end of the JSON object so that
+    nested arrays/objects with their own ] characters don't confuse the parser.
+    Returns (context_dict_or_None, cleaned_message).
+    """
+    if not raw_message.startswith(_USER_CONTEXT_PREFIX):
+        return None, raw_message
+    idx = len(_USER_CONTEXT_PREFIX)
+    try:
+        ctx, end = _JSON_DECODER.raw_decode(raw_message, idx)
+    except json.JSONDecodeError:
+        logger.warning("Could not parse USER_CONTEXT JSON")
+        return None, raw_message
+    # Expect a closing ] immediately after the JSON object
+    rest = raw_message[end:]
+    if rest.startswith("]"):
+        rest = rest[1:]
+    # Strip optional newline separator
+    if rest.startswith("\n"):
+        rest = rest[1:]
+    return ctx, rest.strip()
+
+
+# ---------------------------------------------------------------------------
+# Dynamic system prompt builder
+# ---------------------------------------------------------------------------
+
+BASE_SYSTEM_PROMPT = (
     "You are the RNLI Lifeboat Station Finder, an expert AI assistant for the "
-    "Royal National Lifeboat Institution (RNLI). Your purpose is to help people "
-    "find their nearest lifeboat stations, understand the types of lifeboats in "
-    "operation, and learn about RNLI coverage across the UK and Ireland.\n\n"
-    "You have access to a comprehensive database of RNLI stations. Always use "
-    "your tools to fetch accurate, up-to-date information before responding.\n\n"
-    "Key facts about station types:\n"
-    "- ALB (All-weather Lifeboat): large offshore lifeboats that operate in all "
-    "  weather conditions, day and night.\n"
-    "- ILB (Inshore Lifeboat): smaller, faster boats for rescues close to shore "
-    "  in calmer conditions.\n\n"
-    "Be helpful, accurate, and professional. When providing lists of stations, "
-    "include relevant details such as station type, region, and distance if available."
+    "Royal National Lifeboat Institution (RNLI). You help people find their nearest "
+    "lifeboat stations, understand the types of lifeboats in operation, and learn "
+    "about RNLI coverage across the UK and Ireland.\n\n"
+    "You have access to a comprehensive database of RNLI stations. Always use your "
+    "tools to fetch station data when someone asks about locations or stations.\n\n"
+    "Station types:\n"
+    "- ALB (All-weather Lifeboat): large offshore lifeboats for all conditions.\n"
+    "- ILB (Inshore Lifeboat): smaller, faster boats for rescues close to shore.\n\n"
+    "When presenting station results from your tools, for each station include:\n"
+    "- Station name and type\n"
+    "- Address (copy the exact 'address' value from the tool response)\n"
+    "- Walking directions: use the exact 'google_maps_url' value from the tool "
+    "response as a markdown link, e.g. [🗺️ Get walking directions](https://...)\n"
+    "- Distance in miles if present\n\n"
+    "Format station lists clearly. Be helpful, friendly and professional."
 )
+
+
+def build_system_prompt(context: Optional[dict] = None) -> str:
+    """Build a personalised system prompt based on user context."""
+    prompt = BASE_SYSTEM_PROMPT
+
+    if not context:
+        return prompt
+
+    name = context.get("name", "there")
+    plan = (context.get("plan") or "standard").lower()
+    visits = context.get("visits") or []
+
+    personal_section = f"\n\n---\nCURRENT USER: {name}"
+
+    if plan == "gold":
+        personal_section += " (⭐ Gold Member)"
+
+    if visits:
+        visit_lines = []
+        for v in visits:
+            station = v.get("station", "Unknown")
+            date = v.get("date", "")
+            stype = v.get("station_type", "")
+            line = f"  - {station}"
+            if stype:
+                line += f" ({stype})"
+            if date:
+                line += f" — visited {date}"
+            visit_lines.append(line)
+        personal_section += (
+            f"\n{name} has previously visited these RNLI stations:\n"
+            + "\n".join(visit_lines)
+            + "\n\nIf they ask about their visits (e.g. 'When did I visit Poole?' or "
+            "'What was my last station visit?'), answer directly from this list "
+            "without calling any tools."
+        )
+
+    if plan == "gold":
+        personal_section += (
+            "\n\nAs a Gold Member, when you retrieve station data, also share any "
+            "'recent_launch' information included in the station response. "
+            "Present it as an exclusive Gold Member insight, e.g.: "
+            "'🚤 Latest Launch (Gold exclusive): <date> — <description>'"
+        )
+
+    return prompt + personal_section
+
 
 # ---------------------------------------------------------------------------
 # Tool definitions
@@ -75,7 +164,8 @@ TOOLS = [
             "description": (
                 "Find the nearest RNLI lifeboat stations to a given UK location. "
                 "The location can be a postcode (e.g. 'SW1A 2AA') or a town name "
-                "(e.g. 'Brighton'). Returns a list of stations with distances."
+                "(e.g. 'Brighton'). Returns a list of stations with distances, "
+                "addresses, and Google Maps walking directions links."
             ),
             "parameters": {
                 "type": "object",
@@ -100,7 +190,8 @@ TOOLS = [
             "name": "get_station_details",
             "description": (
                 "Get full details about a specific RNLI lifeboat station by name. "
-                "Returns station type, county, region, country, coordinates, and website URL."
+                "Returns station type, county, region, country, address, "
+                "Google Maps walking directions URL, and recent launch data."
             ),
             "parameters": {
                 "type": "object",
@@ -216,11 +307,14 @@ class LLMClient:
         self.temperature = LLM_TEMPERATURE
 
     async def process_query(
-        self, query: str, tools: list[dict]
+        self,
+        query: str,
+        tools: list[dict],
+        system_prompt: str = BASE_SYSTEM_PROMPT,
     ) -> tuple[str, list[dict]]:
         """Send a user query and return (content, tool_calls)."""
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": query},
         ]
         params: dict[str, Any] = {
@@ -266,10 +360,11 @@ class LLMClient:
         original_query: str,
         tool_call: dict,
         tool_result: Any,
+        system_prompt: str = BASE_SYSTEM_PROMPT,
     ) -> str:
         """Feed the tool result back to the LLM for a final natural-language answer."""
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": original_query},
             {
                 "role": "assistant",
@@ -346,16 +441,30 @@ class RNLIAgent:
         else:
             return {"error": f"Unknown tool: {tool_name}"}
 
-    async def process_request(self, message: str) -> str:
-        """Process a user message and return a natural-language response."""
+    async def process_request(self, raw_message: str) -> str:
+        """Process a user message (with optional context prefix) and return a response."""
+        # Extract user context if present
+        context, message = extract_user_context(raw_message)
+        system_prompt = build_system_prompt(context)
+
+        if context:
+            logger.info(
+                "User context: name=%s, plan=%s, visits=%d",
+                context.get("name"),
+                context.get("plan"),
+                len(context.get("visits") or []),
+            )
+
         logger.info("=" * 60)
         logger.info("User: %s", message)
 
         try:
-            content, tool_calls = await self.llm.process_query(message, TOOLS)
+            content, tool_calls = await self.llm.process_query(
+                message, TOOLS, system_prompt=system_prompt
+            )
 
             if not tool_calls:
-                # LLM answered directly without tool use
+                # LLM answered directly (e.g. from context — visit history questions)
                 if content:
                     return content
                 return (
@@ -373,7 +482,7 @@ class RNLIAgent:
             logger.info("Tool result received")
 
             final_response = await self.llm.process_tool_result(
-                message, tool_call, tool_result
+                message, tool_call, tool_result, system_prompt=system_prompt
             )
 
             logger.info("Response generated")
@@ -410,7 +519,8 @@ def create_agent_card() -> AgentCard:
         description=(
             "Find RNLI lifeboat stations near any UK postcode or town. "
             "Search by region, filter by station type (ALB/ILB), and get "
-            "full details about individual stations."
+            "full details including addresses, walking directions, and — "
+            "for Gold Members — recent lifeboat launch history."
         ),
         tags=["rnli", "lifeboat", "maritime", "rescue", "uk", "stations"],
     )
@@ -427,7 +537,8 @@ def create_agent_card() -> AgentCard:
         description=(
             "AI-powered assistant for finding RNLI lifeboat stations across the "
             "UK and Ireland. Supports postcode and town-based searches, regional "
-            "filtering, and detailed station information."
+            "filtering, detailed station information with addresses and Google Maps "
+            "walking directions, visit history recall, and Gold Member launch data."
         ),
         url="http://localhost:8003",
         capabilities=capabilities,
