@@ -31,11 +31,13 @@
       {
         "name": "default-group",
         "type": "http-proxy",
+        "sharedConfiguration": "{\"proxy\":{\"useSystemProxy\":false,\"enabled\":false},\"http\":{\"keepAliveTimeout\":30000,\"keepAlive\":true,\"propagateClientHost\":false,\"followRedirects\":false,\"readTimeout\":180000,\"idleTimeout\":0,\"connectTimeout\":5000,\"useCompression\":true,\"maxConcurrentConnections\":20,\"version\":\"HTTP_1_1\",\"pipelining\":false},\"ssl\":{\"keyStore\":{\"type\":\"\"},\"hostnameVerifier\":true,\"trustStore\":{\"type\":\"\"},\"trustAll\":false}}",
         "endpoints": [
           {
             "name": "rnli-a2a-agent",
             "type": "http-proxy",
             "weight": 1,
+            "inheritConfiguration": true,
             "configuration": {
               "target": "http://rnli-a2a-agent:8001"
             }
@@ -43,6 +45,21 @@
         ]
       }
     ],
+    "analytics": {
+      "enabled": true,
+      "logging": {
+        "content": {
+          "headers": true,
+          "messageHeaders": false,
+          "payload": true,
+          "messagePayload": false,
+          "messageMetadata": false
+        },
+        "phase": { "request": true, "response": true },
+        "mode": { "endpoint": true, "entrypoint": true }
+      },
+      "tracing": { "enabled": false, "verbose": false }
+    },
     "flowExecution": {
       "mode": "DEFAULT",
       "matchRequired": false

@@ -46,12 +46,19 @@ services:
         condition: service_healthy
       gio-apim-elasticsearch:
         condition: service_healthy
+      agent-live-graph:
+        condition: service_started
     environment:
       - gravitee_management_mongodb_uri=mongodb://gio-apim-mongodb:27017/gravitee?serverSelectionTimeoutMS=5000&connectTimeoutMS=5000&socketTimeoutMS=5000
       - gravitee_ratelimit_mongodb_uri=mongodb://gio-apim-mongodb:27017/gravitee?serverSelectionTimeoutMS=5000&connectTimeoutMS=5000&socketTimeoutMS=5000
       - gravitee_reporters_elasticsearch_endpoints_0=http://gio-apim-elasticsearch:9200
       - gravitee_services_inference_timeout=120000
       - GRAVITEE_LICENSE_KEY=${GRAVITEE_LICENSE}
+      # TCP Reporter — sends JSON events to AI Agent Inspector for real-time visualisation
+      - gravitee_reporters_tcp_enabled=true
+      - gravitee_reporters_tcp_host=agent-live-graph
+      - gravitee_reporters_tcp_port=9001
+      - gravitee_reporters_tcp_output=json
     networks: [northbound, southbound]
 
   gio-apim-management-api:
@@ -237,6 +244,23 @@ services:
     ports:
       - "8002:80"
     networks: [northbound]
+
+  # ---------------------------------------------------------------------------
+  # AI Agent Inspector (real-time visualisation of the agent flow)
+  # ---------------------------------------------------------------------------
+
+  agent-live-graph:
+    build:
+      context: ./agent-live-graph
+      dockerfile: Dockerfile
+    container_name: agent-live-graph
+    restart: unless-stopped
+    ports:
+      - "9002:9002"  # Web UI + WebSocket
+    environment:
+      - HTTP_PORT=9002  # Web UI and WebSocket
+      - TCP_PORT=9001   # Receives TCP events from the APIM Gateway TCP Reporter
+    networks: [southbound, northbound]
 
 networks:
   northbound:

@@ -259,8 +259,22 @@ def publish_and_start(session: requests.Session, api_id: str, api_name: str, use
         if definition:
             api_def = definition.get("api", {})
             if "endpointGroups" in api_def:
-                config["endpointGroups"] = api_def["endpointGroups"]
+                egs = api_def["endpointGroups"]
+                # Gravitee stores sharedConfiguration as a dict; the JSON file may have it
+                # as a JSON-encoded string — parse it so the PUT sends the correct type.
+                for eg in egs:
+                    sc = eg.get("sharedConfiguration")
+                    if isinstance(sc, str):
+                        try:
+                            eg["sharedConfiguration"] = json.loads(sc)
+                        except json.JSONDecodeError:
+                            pass
+                config["endpointGroups"] = egs
                 log(f"  Updating endpointGroups for '{api_name}'")
+            # Apply analytics/logging config from the definition
+            if "analytics" in api_def:
+                config["analytics"] = api_def["analytics"]
+                log(f"  Updating analytics for '{api_name}'")
         session.put(base, json=config, timeout=10)
 
     r = session.post(f"{base}/_start", timeout=10)

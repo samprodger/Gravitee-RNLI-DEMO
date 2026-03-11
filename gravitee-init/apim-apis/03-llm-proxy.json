@@ -44,6 +44,21 @@
         ]
       }
     ],
+    "analytics": {
+      "enabled": true,
+      "logging": {
+        "content": {
+          "headers": true,
+          "messageHeaders": false,
+          "payload": true,
+          "messagePayload": false,
+          "messageMetadata": false
+        },
+        "phase": { "request": true, "response": true },
+        "mode": { "endpoint": true, "entrypoint": true }
+      },
+      "tracing": { "enabled": false, "verbose": false }
+    },
     "flowExecution": {
       "mode": "DEFAULT",
       "matchRequired": false
