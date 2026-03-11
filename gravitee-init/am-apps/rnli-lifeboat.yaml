@@ -1,0 +1,18 @@
+# RNLI Lifeboat Finder - Browser OAuth Application
+# Authorization Code + PKCE flow for the RNLI website
+
+name: "RNLI Lifeboat Finder"
+description: "Browser application for the RNLI Lifeboat Station Finder demo"
+type: "BROWSER"
+
+clientId: "rnli-lifeboat"
+clientSecret: "rnli-lifeboat"
+
+redirectUris:
+  - "http://localhost:8002/"
+  - "https://oauth.pstmn.io/v1/callback"
+
+scopes:
+  - "openid"
+  - "profile"
+  - "email"

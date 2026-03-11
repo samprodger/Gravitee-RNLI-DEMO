@@ -96,6 +96,84 @@ services:
     networks: [northbound]
 
   # ---------------------------------------------------------------------------
+  # Gravitee Access Management
+  # ---------------------------------------------------------------------------
+
+  gio-am-management-api:
+    image: ${AM_REGISTRY:-graviteeio}/am-management-api:${AM_VERSION:-4.10.6}
+    container_name: gio-am-management-api
+    restart: unless-stopped
+    ports:
+      - "8093:8093"
+      - "18093:18093"
+    depends_on:
+      gio-apim-mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: >
+        sh -c '
+        response=$$(curl -s -u admin:adminadmin http://localhost:18093/_node/health);
+        if echo "$$response" | grep -Eq "\"healthy\"[[:space:]]*:[[:space:]]*false"; then exit 1; else exit 0; fi
+        '
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    environment:
+      - gravitee_license_key=${GRAVITEE_LICENSE}
+      - gravitee_services_core_http_host=0.0.0.0
+      - gravitee_management_mongodb_uri=mongodb://gio-apim-mongodb:27017/graviteeam?serverSelectionTimeoutMS=5000&connectTimeoutMS=5000&socketTimeoutMS=5000
+      - gravitee_oauth2_mongodb_uri=mongodb://gio-apim-mongodb:27017/graviteeam?serverSelectionTimeoutMS=5000&connectTimeoutMS=5000&socketTimeoutMS=5000
+      - gravitee_dataPlanes_0_mongodb_uri=mongodb://gio-apim-mongodb:27017/graviteeam?serverSelectionTimeoutMS=5000&connectTimeoutMS=5000&socketTimeoutMS=5000
+    networks: [southbound, northbound]
+
+  gio-am-gateway:
+    image: ${AM_REGISTRY:-graviteeio}/am-gateway:${AM_VERSION:-4.10.6}
+    container_name: gio-am-gateway
+    restart: unless-stopped
+    ports:
+      - "8092:8092"
+    depends_on:
+      gio-apim-mongodb:
+        condition: service_healthy
+      gio-am-management-api:
+        condition: service_started
+    environment:
+      - gravitee_license_key=${GRAVITEE_LICENSE}
+      - gravitee_management_mongodb_uri=mongodb://gio-apim-mongodb:27017/graviteeam?serverSelectionTimeoutMS=5000&connectTimeoutMS=5000&socketTimeoutMS=5000
+      - gravitee_oauth2_mongodb_uri=mongodb://gio-apim-mongodb:27017/graviteeam?serverSelectionTimeoutMS=5000&connectTimeoutMS=5000&socketTimeoutMS=5000
+    networks: [southbound, northbound]
+
+  gio-am-management-ui:
+    image: ${AM_REGISTRY:-graviteeio}/am-management-ui:${AM_VERSION:-4.10.6}
+    container_name: gio-am-management-ui
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    depends_on:
+      - gio-am-management-api
+    environment:
+      - MGMT_API_URL=http://localhost:8093
+      - MGMT_UI_URL=http://localhost:8081
+    networks: [northbound]
+
+  # ---------------------------------------------------------------------------
+  # MCP Inspector
+  # ---------------------------------------------------------------------------
+
+  mcp-inspector:
+    image: ghcr.io/modelcontextprotocol/inspector:latest
+    container_name: mcp-inspector
+    restart: unless-stopped
+    ports:
+      - "6274:6274"
+      - "6277:6277"
+    environment:
+      - DANGEROUSLY_OMIT_AUTH=true
+      - HOST=0.0.0.0
+    networks: [southbound, northbound]
+
+  # ---------------------------------------------------------------------------
   # Gravitee Init
   # ---------------------------------------------------------------------------
 
@@ -107,8 +185,10 @@ services:
     restart: "no"
     depends_on:
       - gio-apim-management-api
+      - gio-am-management-api
     environment:
       - APIM_BASE_URL=http://gio-apim-management-api:8083
+      - AM_BASE_URL=http://gio-am-management-api:8093
     networks: [southbound]
 
   # ---------------------------------------------------------------------------

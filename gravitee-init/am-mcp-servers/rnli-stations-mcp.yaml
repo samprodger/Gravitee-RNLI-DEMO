@@ -1,0 +1,34 @@
+# RNLI Lifeboat Stations MCP Server
+# Registered as a Protected Resource in Gravitee AM
+# Inspectable via MCP Inspector at http://localhost:6274
+
+name: "RNLI Lifeboat Stations"
+description: "MCP Server for RNLI lifeboat station data and search"
+type: "MCP_SERVER"
+
+resourceIdentifiers:
+  - "http://localhost:8082/lifeboat-api"
+
+clientId: "rnli-stations-mcp"
+clientSecret: "rnli-stations-mcp"
+
+tools:
+  - key: "findNearestStations"
+    description: "Find nearest RNLI lifeboat stations to a given UK postcode or town"
+    type: "MCP_TOOL"
+    scopes: []
+
+  - key: "listStations"
+    description: "List all RNLI lifeboat stations with optional filtering by type or region"
+    type: "MCP_TOOL"
+    scopes: []
+
+  - key: "getStationDetails"
+    description: "Get detailed information for a specific RNLI lifeboat station by name"
+    type: "MCP_TOOL"
+    scopes: []
+
+  - key: "getVisitedStations"
+    description: "Get the visited stations history for the authenticated user"
+    type: "MCP_TOOL"
+    scopes: []
