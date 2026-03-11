@@ -1,0 +1,50 @@
+{
+  "api": {
+    "name": "RNLI Stations Agent",
+    "apiVersion": "1.0",
+    "definitionVersion": "V4",
+    "type": "PROXY",
+    "description": "A2A-compliant AI agent for finding RNLI lifeboat stations. Accepts natural-language queries about nearest stations, boat types, and regional coverage.",
+    "tags": [],
+    "listeners": [
+      {
+        "type": "HTTP",
+        "paths": [
+          { "path": "/stations-agent/" }
+        ],
+        "entrypoints": [
+          { "type": "http-proxy" }
+        ]
+      }
+    ],
+    "endpointGroups": [
+      {
+        "name": "default-group",
+        "type": "http-proxy",
+        "endpoints": [
+          {
+            "name": "rnli-a2a-agent",
+            "type": "http-proxy",
+            "weight": 1,
+            "configuration": {
+              "target": "http://rnli-a2a-agent:8001"
+            }
+          }
+        ]
+      }
+    ],
+    "flowExecution": {
+      "mode": "DEFAULT",
+      "matchRequired": false
+    },
+    "flows": [],
+    "plans": [
+      {
+        "name": "Free Plan",
+        "status": "PUBLISHED",
+        "security": { "type": "KEY_LESS" },
+        "flows": []
+      }
+    ]
+  }
+}

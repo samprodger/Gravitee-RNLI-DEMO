@@ -1,0 +1,50 @@
+{
+  "api": {
+    "name": "RNLI Lifeboat Stations API",
+    "apiVersion": "1.0",
+    "definitionVersion": "V4",
+    "type": "PROXY",
+    "description": "Proxies requests to the RNLI Lifeboat Stations FastAPI service. Provides station lookup, nearest-station search by postcode or town, and filtering by type or region.",
+    "tags": [],
+    "listeners": [
+      {
+        "type": "HTTP",
+        "paths": [
+          { "path": "/lifeboat-api/" }
+        ],
+        "entrypoints": [
+          { "type": "http-proxy" }
+        ]
+      }
+    ],
+    "endpointGroups": [
+      {
+        "name": "default-group",
+        "type": "http-proxy",
+        "endpoints": [
+          {
+            "name": "lifeboat-api",
+            "type": "http-proxy",
+            "weight": 1,
+            "configuration": {
+              "target": "http://lifeboat-api:8000"
+            }
+          }
+        ]
+      }
+    ],
+    "flowExecution": {
+      "mode": "DEFAULT",
+      "matchRequired": false
+    },
+    "flows": [],
+    "plans": [
+      {
+        "name": "Free Plan",
+        "status": "PUBLISHED",
+        "security": { "type": "KEY_LESS" },
+        "flows": []
+      }
+    ]
+  }
+}

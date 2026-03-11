@@ -1,0 +1,5 @@
+a2a-sdk
+openai
+httpx
+uvicorn
+python-dotenv

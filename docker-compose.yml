@@ -1,0 +1,159 @@
+services:
+
+  # ---------------------------------------------------------------------------
+  # Databases
+  # ---------------------------------------------------------------------------
+
+  gio-apim-mongodb:
+    image: mongo:${MONGODB_VERSION:-8.0.18}
+    container_name: gio-apim-mongodb
+    restart: unless-stopped
+    networks: [southbound]
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/27017"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  gio-apim-elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION:-9.2.5}
+    container_name: gio-apim-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    networks: [southbound]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # Gravitee APIM
+  # ---------------------------------------------------------------------------
+
+  gio-apim-gateway:
+    image: ${APIM_REGISTRY:-graviteeio}/apim-gateway:${APIM_VERSION_GATEWAY:-4.10.6-debian}
+    container_name: gio-apim-gateway
+    restart: unless-stopped
+    ports:
+      - "8082:8082"
+    depends_on:
+      gio-apim-mongodb:
+        condition: service_healthy
+      gio-apim-elasticsearch:
+        condition: service_healthy
+    environment:
+      - gravitee_management_mongodb_uri=mongodb://gio-apim-mongodb:27017/gravitee?serverSelectionTimeoutMS=5000&connectTimeoutMS=5000&socketTimeoutMS=5000
+      - gravitee_ratelimit_mongodb_uri=mongodb://gio-apim-mongodb:27017/gravitee?serverSelectionTimeoutMS=5000&connectTimeoutMS=5000&socketTimeoutMS=5000
+      - gravitee_reporters_elasticsearch_endpoints_0=http://gio-apim-elasticsearch:9200
+      - gravitee_services_inference_timeout=120000
+      - GRAVITEE_LICENSE_KEY=${GRAVITEE_LICENSE}
+    networks: [northbound, southbound]
+
+  gio-apim-management-api:
+    image: ${APIM_REGISTRY:-graviteeio}/apim-management-api:${APIM_VERSION:-4.10.6}
+    container_name: gio-apim-management-api
+    restart: unless-stopped
+    ports:
+      - "8083:8083"
+    depends_on:
+      gio-apim-mongodb:
+        condition: service_healthy
+      gio-apim-elasticsearch:
+        condition: service_healthy
+    environment:
+      - gravitee_management_mongodb_uri=mongodb://gio-apim-mongodb:27017/gravitee?serverSelectionTimeoutMS=5000&connectTimeoutMS=5000&socketTimeoutMS=5000
+      - gravitee_analytics_elasticsearch_endpoints_0=http://gio-apim-elasticsearch:9200
+      - GRAVITEE_LICENSE_KEY=${GRAVITEE_LICENSE}
+    networks: [northbound, southbound]
+
+  gio-apim-management-ui:
+    image: ${APIM_REGISTRY:-graviteeio}/apim-management-ui:${APIM_VERSION:-4.10.6}
+    container_name: gio-apim-management-ui
+    restart: unless-stopped
+    ports:
+      - "8084:8080"
+    depends_on:
+      - gio-apim-management-api
+    environment:
+      - MGMT_API_URL=http://localhost:8083/
+    networks: [northbound]
+
+  gio-apim-portal-ui:
+    image: ${APIM_REGISTRY:-graviteeio}/apim-portal-ui:${APIM_VERSION:-4.10.6}
+    container_name: gio-apim-portal-ui
+    restart: unless-stopped
+    ports:
+      - "8085:8080"
+    depends_on:
+      - gio-apim-management-api
+    environment:
+      - PORTAL_API_URL=http://localhost:8083/portal/environments/DEFAULT
+    networks: [northbound]
+
+  # ---------------------------------------------------------------------------
+  # Gravitee Init
+  # ---------------------------------------------------------------------------
+
+  gio-gravitee-init:
+    build:
+      context: ./gravitee-init
+      dockerfile: Dockerfile
+    container_name: gio-gravitee-init
+    restart: "no"
+    depends_on:
+      - gio-apim-management-api
+    environment:
+      - APIM_BASE_URL=http://gio-apim-management-api:8083
+    networks: [southbound]
+
+  # ---------------------------------------------------------------------------
+  # RNLI Services
+  # ---------------------------------------------------------------------------
+
+  lifeboat-api:
+    build:
+      context: ./lifeboat-api
+      dockerfile: Dockerfile
+    container_name: lifeboat-api
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    networks: [northbound, southbound]
+
+  rnli-a2a-agent:
+    build:
+      context: ./rnli-a2a-agent
+      dockerfile: Dockerfile
+    container_name: rnli-a2a-agent
+    restart: unless-stopped
+    ports:
+      - "8003:8001"
+    depends_on:
+      - lifeboat-api
+    environment:
+      - LIFEBOAT_API_BASE=http://lifeboat-api:8000
+      - LLM_BASE_URL=http://gio-apim-gateway:8082/llm-proxy
+      - LLM_MODEL=qwen3:0.6b
+      - AGENT_SERVER_PORT=8001
+    networks: [northbound, southbound]
+
+  rnli-website:
+    build:
+      context: ./rnli-website
+      dockerfile: Dockerfile
+    container_name: rnli-website
+    restart: unless-stopped
+    ports:
+      - "8002:80"
+    networks: [northbound]
+
+networks:
+  northbound:
+    name: northbound
+  southbound:
+    name: southbound
