@@ -126,9 +126,40 @@ async def resolve_postcode(postcode: str) -> Optional[tuple[float, float]]:
 
 async def resolve_town(town: str) -> Optional[tuple[float, float]]:
     """
-    Call postcodes.io places API to get lat/lon for a UK town name.
+    Geocode a UK town/city name using the Nominatim (OpenStreetMap) API.
+
+    Nominatim returns results ranked by prominence, so large cities like
+    Brighton or Cardiff come back first rather than obscure hamlets with
+    the same name. Falls back to the postcodes.io places API on failure.
+
     Returns (lat, lon) or None on failure.
     """
+    # --- Primary: Nominatim (OSM) ---
+    nominatim_url = "https://nominatim.openstreetmap.org/search"
+    headers = {"User-Agent": "RNLI-Lifeboat-Station-Finder/1.0 (demo)"}
+    async with httpx.AsyncClient(timeout=8.0, headers=headers) as client:
+        try:
+            resp = await client.get(
+                nominatim_url,
+                params={
+                    "q": town,
+                    "countrycodes": "gb",
+                    "format": "json",
+                    "limit": 1,
+                    "addressdetails": 0,
+                },
+            )
+            if resp.status_code == 200:
+                results = resp.json()
+                if results:
+                    lat = results[0].get("lat")
+                    lon = results[0].get("lon")
+                    if lat is not None and lon is not None:
+                        return float(lat), float(lon)
+        except Exception:
+            pass
+
+    # --- Fallback: postcodes.io places API ---
     url = f"{POSTCODES_IO_BASE}/places"
     async with httpx.AsyncClient(timeout=5.0) as client:
         try:
@@ -144,6 +175,7 @@ async def resolve_town(town: str) -> Optional[tuple[float, float]]:
                         return float(lat), float(lon)
         except Exception:
             pass
+
     return None
 
 

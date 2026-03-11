@@ -1,5 +1,7 @@
-a2a-sdk
+a2a-sdk[http-server]
 openai
 httpx
 uvicorn
+starlette
+sse-starlette
 python-dotenv

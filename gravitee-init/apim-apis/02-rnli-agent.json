@@ -14,7 +14,17 @@
         ],
         "entrypoints": [
           { "type": "http-proxy" }
-        ]
+        ],
+        "cors": {
+          "enabled": true,
+          "allowOrigin": ["*"],
+          "allowMethods": ["GET","POST","PUT","DELETE","OPTIONS","PATCH"],
+          "allowHeaders": ["Content-Type","Authorization","Accept","Origin","X-Requested-With"],
+          "exposeHeaders": [],
+          "allowCredentials": false,
+          "maxAge": 86400,
+          "runPolicies": false
+        }
       }
     ],
     "endpointGroups": [

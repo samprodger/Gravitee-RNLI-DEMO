@@ -10,7 +10,7 @@
 const config = {
     agentCardUrl:
         window.APP_CONFIG?.agentCardUrl ||
-        'http://localhost:8082/rnli-agent/.well-known/agent-card.json',
+        'http://localhost:8082/stations-agent/.well-known/agent-card.json',
     agentUrl: null,
     isConnected: false,
 };
@@ -202,9 +202,17 @@ async function fetchAgentCard(url) {
 }
 
 function extractAgentUrl(agentCard) {
-    // The A2A spec puts the endpoint under agentCard.url
-    // The actual JSON-RPC endpoint is typically agentCard.url (no extra path needed
-    // because the A2A SDK mounts the handler at /)
+    // We derive the JSON-RPC endpoint from the agent card URL rather than
+    // agentCard.url, because agentCard.url contains the direct service address
+    // (e.g. http://localhost:8003) which is cross-origin without CORS headers.
+    // Instead we use the gateway base URL (the agentCardUrl minus the
+    // /.well-known/agent-card.json suffix) so all requests go through
+    // the Gravitee gateway which has CORS enabled.
+    const cardUrl = config.agentCardUrl;
+    if (cardUrl) {
+        return cardUrl.replace('/.well-known/agent-card.json', '');
+    }
+    // Fallback to agentCard.url if no agentCardUrl configured
     if (agentCard?.url) return agentCard.url;
     return null;
 }

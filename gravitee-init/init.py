@@ -93,10 +93,71 @@ def get_api_id_by_name(session: requests.Session, name: str) -> str | None:
     return None
 
 
+def ensure_published_plan(session: requests.Session, api_id: str, api_name: str):
+    """
+    Ensure the API has at least one published keyless plan.
+
+    The V4 _import/definition endpoint does not create plans automatically.
+    This function:
+      1. Lists existing plans.
+      2. Publishes any STAGING plans it finds.
+      3. If no plans exist at all, creates a keyless 'Free Plan' and publishes it.
+    """
+    base = f"{APIM_BASE_URL}/management/v2/environments/{ENVIRONMENT}/apis/{api_id}"
+
+    # --- Fetch existing plans ---
+    r = session.get(f"{base}/plans", timeout=10)
+    if not r.ok:
+        log(f"  WARNING: could not list plans for '{api_name}': {r.text}")
+        return
+
+    plans = r.json().get("data", [])
+
+    # Publish any STAGING plans
+    for plan in plans:
+        plan_id = plan.get("id")
+        if (plan.get("status") or "").upper() == "PUBLISHED":
+            log(f"  Plan '{plan.get('name')}' already published for '{api_name}'")
+            continue
+        pub_r = session.post(f"{base}/plans/{plan_id}/_publish", timeout=10)
+        if pub_r.ok:
+            log(f"  Published plan '{plan.get('name')}' for '{api_name}'")
+        else:
+            log(f"  WARNING: could not publish plan '{plan.get('name')}': {pub_r.text}")
+
+    if plans:
+        return  # done — existing plans handled above
+
+    # --- No plans found: create and publish a keyless free plan ---
+    log(f"  No plans found for '{api_name}' — creating keyless Free Plan")
+    plan_body = {
+        "name": "Free Plan",
+        "definitionVersion": "V4",
+        "status": "STAGING",
+        "security": {"type": "KEY_LESS"},
+        "mode": "STANDARD",
+        "flows": [],
+    }
+    cr = session.post(f"{base}/plans", json=plan_body, timeout=10)
+    if not cr.ok:
+        log(f"  WARNING: could not create plan for '{api_name}': {cr.text}")
+        return
+
+    plan_id = cr.json().get("id")
+    pub_r = session.post(f"{base}/plans/{plan_id}/_publish", timeout=10)
+    if pub_r.ok:
+        log(f"  Created and published Free Plan for '{api_name}'")
+    else:
+        log(f"  WARNING: could not publish new plan for '{api_name}': {pub_r.text}")
+
+
 def publish_and_start(session: requests.Session, api_id: str, api_name: str):
     base = f"{APIM_BASE_URL}/management/v2/environments/{ENVIRONMENT}/apis/{api_id}"
 
-    # Publish
+    # Ensure at least one published plan exists (required before the API can be started)
+    ensure_published_plan(session, api_id, api_name)
+
+    # Set API lifecycle to PUBLISHED
     r = session.get(base, timeout=10)
     if r.ok:
         config = r.json()
