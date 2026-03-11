@@ -240,7 +240,7 @@ def cleanup_wrong_plan_type(session: requests.Session, api_id: str, api_name: st
             log(f"    WARNING: could not delete plan {plan_id}: {del_r.text}")
 
 
-def publish_and_start(session: requests.Session, api_id: str, api_name: str, use_jwt: bool = False):
+def publish_and_start(session: requests.Session, api_id: str, api_name: str, use_jwt: bool = False, definition: dict | None = None):
     base = f"{APIM_BASE_URL}/management/v2/environments/{ENVIRONMENT}/apis/{api_id}"
 
     # Remove any plans of the wrong type first (handles re-runs after config change)
@@ -255,6 +255,12 @@ def publish_and_start(session: requests.Session, api_id: str, api_name: str, use
     if r.ok:
         config = r.json()
         config["lifecycleState"] = "PUBLISHED"
+        # Apply endpoint group config from the definition (e.g. updated timeouts)
+        if definition:
+            api_def = definition.get("api", {})
+            if "endpointGroups" in api_def:
+                config["endpointGroups"] = api_def["endpointGroups"]
+                log(f"  Updating endpointGroups for '{api_name}'")
         session.put(base, json=config, timeout=10)
 
     r = session.post(f"{base}/_start", timeout=10)
@@ -312,7 +318,7 @@ def main():
         api_name = definition.get("api", {}).get("name", path.stem)
         api_id = import_api(session, definition)
         if api_id:
-            publish_and_start(session, api_id, api_name, use_jwt=use_jwt)
+            publish_and_start(session, api_id, api_name, use_jwt=use_jwt, definition=definition)
             success += 1
         else:
             failed += 1
