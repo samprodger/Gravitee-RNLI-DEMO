@@ -1,0 +1,53 @@
+{
+  "api": {
+    "name": "RNLI Visited Stations API",
+    "apiVersion": "1.0",
+    "definitionVersion": "V4",
+    "type": "PROXY",
+    "description": "API returning a user's visited RNLI lifeboat stations. Protected by Gravitee AM — the JWT Bearer token is forwarded for user identification.",
+    "tags": [],
+    "listeners": [
+      {
+        "type": "HTTP",
+        "paths": [
+          { "path": "/visited-stations/" }
+        ],
+        "entrypoints": [
+          { "type": "http-proxy" }
+        ],
+        "cors": {
+          "enabled": true,
+          "allowOrigin": ["*"],
+          "allowMethods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+          "allowHeaders": ["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
+          "exposeHeaders": [],
+          "allowCredentials": false,
+          "maxAge": 86400,
+          "runPolicies": false
+        }
+      }
+    ],
+    "endpointGroups": [
+      {
+        "name": "default-group",
+        "type": "http-proxy",
+        "endpoints": [
+          {
+            "name": "lifeboat-api",
+            "type": "http-proxy",
+            "weight": 1,
+            "configuration": {
+              "target": "http://lifeboat-api:8000"
+            }
+          }
+        ]
+      }
+    ],
+    "flowExecution": {
+      "mode": "DEFAULT",
+      "matchRequired": false
+    },
+    "flows": [],
+    "plans": []
+  }
+}
