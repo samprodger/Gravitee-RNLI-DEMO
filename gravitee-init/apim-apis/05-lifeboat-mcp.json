@@ -1,0 +1,239 @@
+{
+  "export": {
+    "date": "2026-03-11T09:00:00.000000000Z",
+    "apimVersion": "4.10.0"
+  },
+  "api": {
+    "definitionVersion": "V4",
+    "type": "PROXY",
+    "listeners": [
+      {
+        "type": "HTTP",
+        "paths": [
+          {
+            "path": "/lifeboat-mcp/",
+            "overrideAccess": false
+          }
+        ],
+        "pathMappings": [],
+        "entrypoints": [
+          {
+            "type": "http-proxy",
+            "qos": "AUTO",
+            "configuration": {}
+          },
+          {
+            "type": "mcp",
+            "qos": "AUTO",
+            "configuration": {
+              "mcpPath": "/mcp",
+              "tools": [
+                {
+                  "gatewayMapping": {
+                    "http": {
+                      "path": "/stations/nearest",
+                      "method": "GET",
+                      "queryParams": [
+                        "location",
+                        "count"
+                      ]
+                    }
+                  },
+                  "toolDefinition": {
+                    "name": "findNearestStations",
+                    "description": "Find the nearest RNLI lifeboat stations to a given UK location. The location can be a postcode (e.g. 'SW1A 2AA') or a town name (e.g. 'Brighton'). Returns stations with distances, addresses, and Google Maps walking directions links.",
+                    "inputSchema": {
+                      "type": "object",
+                      "properties": {
+                        "location": {
+                          "type": "string",
+                          "description": "UK postcode or town name to search from, e.g. 'BH15 1HU' or 'Brighton'"
+                        },
+                        "count": {
+                          "type": "integer",
+                          "description": "Number of nearest stations to return (default 3, max 10)"
+                        }
+                      },
+                      "required": ["location"]
+                    }
+                  }
+                },
+                {
+                  "gatewayMapping": {
+                    "http": {
+                      "path": "/stations",
+                      "method": "GET",
+                      "queryParams": [
+                        "type"
+                      ]
+                    }
+                  },
+                  "toolDefinition": {
+                    "name": "listStationsByType",
+                    "description": "List all RNLI lifeboat stations of a given type. Use 'ALB' for All-weather Lifeboats (large offshore) or 'ILB' for Inshore Lifeboats (smaller, faster, close to shore).",
+                    "inputSchema": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "description": "Station type: 'ALB' (all-weather lifeboat) or 'ILB' (inshore lifeboat)",
+                          "enum": ["ALB", "ILB"]
+                        }
+                      },
+                      "required": ["type"]
+                    }
+                  }
+                },
+                {
+                  "gatewayMapping": {
+                    "http": {
+                      "path": "/stations",
+                      "method": "GET",
+                      "queryParams": [
+                        "region"
+                      ]
+                    }
+                  },
+                  "toolDefinition": {
+                    "name": "listStationsByRegion",
+                    "description": "List all RNLI lifeboat stations in a specific region of the UK or Ireland. Available regions: Scotland, Wales, North East, North West, South East, South West, East, Ireland, Channel Islands.",
+                    "inputSchema": {
+                      "type": "object",
+                      "properties": {
+                        "region": {
+                          "type": "string",
+                          "description": "Region name, e.g. 'Scotland', 'Wales', 'South West', 'Ireland'"
+                        }
+                      },
+                      "required": ["region"]
+                    }
+                  }
+                },
+                {
+                  "gatewayMapping": {
+                    "http": {
+                      "path": "/history",
+                      "method": "GET"
+                    }
+                  },
+                  "toolDefinition": {
+                    "name": "getVisitedStations",
+                    "description": "Get the list of RNLI lifeboat stations previously visited by the current user. Returns station names, types, visit dates, addresses, and for Gold Members, recent launch data.",
+                    "inputSchema": {
+                      "type": "object",
+                      "properties": {},
+                      "required": []
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "servers": []
+      }
+    ],
+    "endpointGroups": [
+      {
+        "name": "Lifeboat API group",
+        "type": "http-proxy",
+        "loadBalancer": {
+          "type": "ROUND_ROBIN"
+        },
+        "sharedConfiguration": "{\"proxy\":{\"useSystemProxy\":false,\"enabled\":false},\"http\":{\"keepAliveTimeout\":30000,\"keepAlive\":true,\"propagateClientHost\":false,\"followRedirects\":false,\"readTimeout\":10000,\"idleTimeout\":0,\"connectTimeout\":3000,\"useCompression\":true,\"maxConcurrentConnections\":20,\"version\":\"HTTP_1_1\",\"pipelining\":false},\"ssl\":{\"keyStore\":{\"type\":\"\"},\"hostnameVerifier\":true,\"trustStore\":{\"type\":\"\"},\"trustAll\":false}}",
+        "endpoints": [
+          {
+            "name": "Lifeboat API",
+            "type": "http-proxy",
+            "weight": 1,
+            "inheritConfiguration": true,
+            "configuration": {
+              "target": "http://lifeboat-api:8000"
+            },
+            "sharedConfigurationOverride": "{}",
+            "services": {},
+            "secondary": false,
+            "tenants": []
+          }
+        ],
+        "services": {}
+      }
+    ],
+    "analytics": {
+      "enabled": true,
+      "logging": {
+        "content": {
+          "headers": true,
+          "messageHeaders": false,
+          "payload": true,
+          "messagePayload": false,
+          "messageMetadata": false
+        },
+        "phase": {
+          "request": true,
+          "response": true
+        },
+        "mode": {
+          "endpoint": true,
+          "entrypoint": true
+        }
+      },
+      "tracing": {
+        "enabled": false,
+        "verbose": false
+      }
+    },
+    "flowExecution": {
+      "mode": "DEFAULT",
+      "matchRequired": false
+    },
+    "flows": [],
+    "id": "a1b2c3d4-e5f6-7890-a1b2-c3d4e5f67890",
+    "name": "RNLI Lifeboat MCP Server",
+    "description": "MCP Server exposing RNLI lifeboat station tools: find nearest stations, list by type/region, get visited stations. Used by the RNLI A2A agent and MCP Inspector.",
+    "apiVersion": "1.0",
+    "createdAt": "2026-03-11T09:00:00.000Z",
+    "updatedAt": "2026-03-11T09:00:00.000Z",
+    "disableMembershipNotifications": false,
+    "groups": [],
+    "state": "STARTED",
+    "visibility": "PRIVATE",
+    "labels": ["mcp", "rnli", "lifeboat"],
+    "lifecycleState": "PUBLISHED",
+    "tags": [],
+    "categories": [],
+    "originContext": {
+      "origin": "MANAGEMENT"
+    },
+    "responseTemplates": {},
+    "resources": [],
+    "properties": []
+  },
+  "pages": [],
+  "plans": [
+    {
+      "definitionVersion": "V4",
+      "flows": [],
+      "id": "b2c3d4e5-f6a7-8901-b2c3-d4e5f6a78901",
+      "name": "Open",
+      "description": "Open keyless plan for MCP Inspector and agent access",
+      "apiId": "a1b2c3d4-e5f6-7890-a1b2-c3d4e5f67890",
+      "security": {
+        "type": "KEY_LESS",
+        "configuration": {}
+      },
+      "mode": "STANDARD",
+      "characteristics": [],
+      "commentRequired": false,
+      "excludedGroups": [],
+      "generalConditions": "",
+      "order": 1,
+      "status": "PUBLISHED",
+      "tags": [],
+      "type": "API",
+      "validation": "AUTO"
+    }
+  ],
+  "apiPicture": null,
+  "apiMedia": []
+}

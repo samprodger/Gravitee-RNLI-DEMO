@@ -171,6 +171,9 @@ services:
     environment:
       - DANGEROUSLY_OMIT_AUTH=true
       - HOST=0.0.0.0
+      # Pre-configure MCP Inspector to connect to the RNLI Lifeboat MCP server
+      # Open http://localhost:6274 → select Streamable HTTP → URL is pre-filled
+      - MCP_SERVER_URL=http://gio-apim-gateway:8082/lifeboat-mcp/mcp
     networks: [southbound, northbound]
 
   # ---------------------------------------------------------------------------
@@ -215,11 +218,14 @@ services:
       - "8003:8001"
     depends_on:
       - lifeboat-api
+      - gio-apim-gateway
     environment:
       - LIFEBOAT_API_BASE=http://lifeboat-api:8000
       - LLM_BASE_URL=http://gio-apim-gateway:8082/llm-proxy
       - LLM_MODEL=qwen3:0.6b
       - AGENT_SERVER_PORT=8001
+      # Tool calls route through the Gravitee MCP server — traffic visible in APIM analytics
+      - MCP_HTTP_URL=http://gio-apim-gateway:8082/lifeboat-mcp/mcp
     networks: [northbound, southbound]
 
   rnli-website:

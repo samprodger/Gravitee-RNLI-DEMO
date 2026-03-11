@@ -3,8 +3,8 @@ RNLI Lifeboat Station Finder — A2A Agent
 
 Exposes an Agent-to-Agent (A2A) compliant server that answers questions about
 RNLI lifeboat stations.  It uses an LLM (via Gravitee Gateway / Ollama) for
-natural-language understanding and calls the lifeboat-api service directly as
-its tool back-end.
+natural-language understanding and calls tools via the Gravitee MCP server,
+so every tool call is visible as traffic in APIM analytics.
 
 User context is passed as a JSON prefix in the message:
   [USER_CONTEXT:{"name":"Joe Doe","email":"...","plan":"gold","visits":[...]}]
@@ -14,7 +14,6 @@ User context is passed as a JSON prefix in the message:
 import json
 import logging
 import os
-import re
 import uuid
 from typing import Any, Optional
 
@@ -23,6 +22,8 @@ import uvicorn
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers.request_handler import RequestHandler, ServerError
 from a2a.types import AgentCapabilities, AgentCard, AgentSkill, Message, Role, TextPart
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
 from openai import OpenAI, RateLimitError
 
 # ---------------------------------------------------------------------------
@@ -36,6 +37,13 @@ LLM_API_KEY = os.getenv("LLM_API_KEY", "not-needed")
 LLM_MODEL = os.getenv("LLM_MODEL", "ollama:qwen3:0.6b")
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.3"))
 
+# MCP server exposed by Gravitee — tool calls route through APIM gateway
+MCP_HTTP_URL = os.getenv(
+    "MCP_HTTP_URL",
+    "http://gio-apim-gateway:8082/lifeboat-mcp/mcp",
+)
+
+# Fallback health-check URL (direct to lifeboat-api while MCP server warms up)
 LIFEBOAT_API_BASE = os.getenv("LIFEBOAT_API_BASE", "http://lifeboat-api:8000")
 
 # ---------------------------------------------------------------------------
@@ -85,39 +93,42 @@ def extract_user_context(raw_message: str) -> tuple[Optional[dict], str]:
 # Dynamic system prompt builder
 # ---------------------------------------------------------------------------
 
+# Short prompt used for the first LLM call (tool selection).
+# Kept brief so small models (qwen3:0.6b) reliably choose the correct tool.
 BASE_SYSTEM_PROMPT = (
-    "You are the RNLI Lifeboat Station Finder, an expert AI assistant for the "
-    "Royal National Lifeboat Institution (RNLI). You help people find their nearest "
-    "lifeboat stations, understand the types of lifeboats in operation, and learn "
-    "about RNLI coverage across the UK and Ireland.\n\n"
-    "You have access to a comprehensive database of RNLI stations. Always use your "
-    "tools to fetch station data when someone asks about locations or stations.\n\n"
-    "Station types:\n"
-    "- ALB (All-weather Lifeboat): large offshore lifeboats for all conditions.\n"
-    "- ILB (Inshore Lifeboat): smaller, faster boats for rescues close to shore.\n\n"
-    "When presenting station results from your tools, for each station include:\n"
-    "- Station name and type\n"
-    "- Address (copy the exact 'address' value from the tool response)\n"
-    "- Walking directions: use the exact 'google_maps_url' value from the tool "
-    "response as a markdown link, e.g. [🗺️ Get walking directions](https://...)\n"
-    "- Distance in miles if present\n\n"
-    "Format station lists clearly. Be helpful, friendly and professional."
+    "You are an RNLI lifeboat station assistant. "
+    "Always call a tool to fetch data when the user asks about stations, locations, or visits."
+)
+
+# Richer prompt used for the second LLM call (formatting tool results).
+FORMAT_SYSTEM_PROMPT = (
+    "You are the RNLI Lifeboat Station Finder, an expert assistant for the Royal National "
+    "Lifeboat Institution. Present the tool results clearly and helpfully.\n\n"
+    "For each station include: name, type (ALB=offshore, ILB=inshore), address, distance if "
+    "available, and a walking directions link using the exact 'google_maps_url' value as a "
+    "markdown link: [🗺️ Get walking directions](url).\n\n"
+    "Be friendly and professional."
 )
 
 
-def build_system_prompt(context: Optional[dict] = None) -> str:
-    """Build a personalised system prompt based on user context."""
-    prompt = BASE_SYSTEM_PROMPT
+def build_system_prompts(context: Optional[dict] = None) -> tuple[str, str]:
+    """Return (tool_selection_prompt, format_result_prompt) for the given context.
+
+    The tool-selection prompt is intentionally short so small models reliably
+    pick the right tool.  The format prompt is richer and used only for the
+    second LLM call that turns tool results into a natural-language response.
+    """
+    tool_prompt = BASE_SYSTEM_PROMPT
+    fmt_prompt = FORMAT_SYSTEM_PROMPT
 
     if not context:
-        return prompt
+        return tool_prompt, fmt_prompt
 
     name = context.get("name", "there")
     plan = (context.get("plan") or "standard").lower()
     visits = context.get("visits") or []
 
-    personal_section = f"\n\n---\nCURRENT USER: {name}"
-
+    personal_section = f"\n\nCurrent user: {name}"
     if plan == "gold":
         personal_section += " (⭐ Gold Member)"
 
@@ -134,163 +145,94 @@ def build_system_prompt(context: Optional[dict] = None) -> str:
                 line += f" — visited {date}"
             visit_lines.append(line)
         personal_section += (
-            f"\n{name} has previously visited these RNLI stations:\n"
+            f"\n{name} has previously visited: "
+            + "; ".join(v.get("station", "") for v in visits)
+            + ". Answer visit history questions directly without calling any tools."
+        )
+        fmt_prompt += (
+            f"\n\n{name} has previously visited these RNLI stations:\n"
             + "\n".join(visit_lines)
-            + "\n\nIf they ask about their visits (e.g. 'When did I visit Poole?' or "
-            "'What was my last station visit?'), answer directly from this list "
-            "without calling any tools."
         )
 
     if plan == "gold":
-        personal_section += (
-            "\n\nAs a Gold Member, when you retrieve station data, also share any "
-            "'recent_launch' information included in the station response. "
-            "Present it as an exclusive Gold Member insight, e.g.: "
-            "'🚤 Latest Launch (Gold exclusive): <date> — <description>'"
+        personal_section += " Show any 'recent_launch' data from tool results."
+        fmt_prompt += (
+            "\n\nAs a Gold Member, present any 'recent_launch' data as an exclusive "
+            "Gold Member insight: '🚤 Latest Launch (Gold exclusive): <date> — <desc>'"
         )
 
-    return prompt + personal_section
+    tool_prompt += personal_section
+    fmt_prompt += f"\n\nUser: {name}"
+    return tool_prompt, fmt_prompt
 
 
 # ---------------------------------------------------------------------------
-# Tool definitions
-# ---------------------------------------------------------------------------
-
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "find_nearest_stations",
-            "description": (
-                "Find the nearest RNLI lifeboat stations to a given UK location. "
-                "The location can be a postcode (e.g. 'SW1A 2AA') or a town name "
-                "(e.g. 'Brighton'). Returns a list of stations with distances, "
-                "addresses, and Google Maps walking directions links."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "UK postcode or town name to search from",
-                    },
-                    "count": {
-                        "type": "integer",
-                        "description": "Number of nearest stations to return (default 3, max 10)",
-                        "default": 3,
-                    },
-                },
-                "required": ["location"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_station_details",
-            "description": (
-                "Get full details about a specific RNLI lifeboat station by name. "
-                "Returns station type, county, region, country, address, "
-                "Google Maps walking directions URL, and recent launch data."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "station_name": {
-                        "type": "string",
-                        "description": "Name of the lifeboat station, e.g. 'Dover', 'Falmouth'",
-                    },
-                },
-                "required": ["station_name"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_stations_by_type",
-            "description": (
-                "List all RNLI lifeboat stations of a given type. "
-                "Use 'ALB' for all-weather lifeboats or 'ILB' for inshore lifeboats."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "station_type": {
-                        "type": "string",
-                        "description": "Station type: 'ALB' (all-weather lifeboat) or 'ILB' (inshore lifeboat)",
-                        "enum": ["ALB", "ILB"],
-                    },
-                },
-                "required": ["station_type"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_stations_by_region",
-            "description": (
-                "List all RNLI lifeboat stations in a specific region. "
-                "Available regions include: Scotland, Wales, North East, North West, "
-                "South East, South West, East, Ireland, Channel Islands."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "region": {
-                        "type": "string",
-                        "description": "Region name, e.g. 'Scotland', 'Wales', 'South West'",
-                    },
-                },
-                "required": ["region"],
-            },
-        },
-    },
-]
-
-# ---------------------------------------------------------------------------
-# Lifeboat API client
+# MCP client helpers
 # ---------------------------------------------------------------------------
 
 
-class LifeboatAPIClient:
-    """Thin async HTTP client for the lifeboat-api service."""
+def _mcp_tools_to_openai_format(mcp_tools) -> list[dict]:
+    """Convert MCP tool definitions to OpenAI function calling format.
 
-    def __init__(self, base_url: str = LIFEBOAT_API_BASE):
-        self.base_url = base_url.rstrip("/")
+    Forces inputSchema through a JSON round-trip to ensure it is a plain
+    Python dict — the MCP library may return Pydantic models that the OpenAI
+    SDK cannot serialize, causing silent failures in tool calling.
+    """
+    openai_tools = []
+    for tool in mcp_tools:
+        schema = tool.inputSchema or {"type": "object", "properties": {}}
+        # Force plain dict (handles Pydantic models returned by mcp library)
+        if not isinstance(schema, dict):
+            schema = json.loads(json.dumps(schema, default=str))
+        openai_tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description or "",
+                    "parameters": schema,
+                },
+            }
+        )
+    return openai_tools
 
-    async def find_nearest_stations(
-        self, location: str, count: int = 3
-    ) -> dict[str, Any]:
-        url = f"{self.base_url}/stations/nearest"
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, params={"location": location, "count": count})
-            resp.raise_for_status()
-            return resp.json()
 
-    async def get_station_details(self, station_name: str) -> dict[str, Any]:
-        url = f"{self.base_url}/stations/{station_name}"
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url)
-            if resp.status_code == 404:
-                return {"error": f"Station '{station_name}' not found."}
-            resp.raise_for_status()
-            return resp.json()
+def _extract_mcp_result(content_items) -> Any:
+    """Parse MCP tool result content into a Python object."""
+    if not content_items:
+        return {}
+    text = getattr(content_items[0], "text", None)
+    if text:
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return text
+    return {}
 
-    async def list_stations_by_type(self, station_type: str) -> dict[str, Any]:
-        url = f"{self.base_url}/stations"
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, params={"type": station_type})
-            resp.raise_for_status()
-            return resp.json()
 
-    async def list_stations_by_region(self, region: str) -> dict[str, Any]:
-        url = f"{self.base_url}/stations"
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, params={"region": region})
-            resp.raise_for_status()
-            return resp.json()
+async def _fetch_mcp_tools() -> list[dict]:
+    """Connect to the MCP server and return tools in OpenAI format."""
+    async with streamablehttp_client(MCP_HTTP_URL) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            result = await session.list_tools()
+            tools = _mcp_tools_to_openai_format(result.tools)
+            logger.info(
+                "MCP tools available: %s", [t["function"]["name"] for t in tools]
+            )
+            return tools
+
+
+async def _call_mcp_tool(tool_name: str, tool_args: dict) -> Any:
+    """Call a tool via the Gravitee MCP server and return the parsed result."""
+    logger.info("MCP call → %s(%s)", tool_name, tool_args)
+    async with streamablehttp_client(MCP_HTTP_URL) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            result = await session.call_tool(tool_name, tool_args)
+            data = _extract_mcp_result(result.content)
+            logger.info("MCP result received for %s", tool_name)
+            return data
 
 
 # ---------------------------------------------------------------------------
@@ -360,7 +302,7 @@ class LLMClient:
         original_query: str,
         tool_call: dict,
         tool_result: Any,
-        system_prompt: str = BASE_SYSTEM_PROMPT,
+        system_prompt: str = FORMAT_SYSTEM_PROMPT,
     ) -> str:
         """Feed the tool result back to the LLM for a final natural-language answer."""
         messages = [
@@ -407,45 +349,49 @@ class LLMClient:
 
 
 class RNLIAgent:
-    """RNLI Lifeboat Station Finder agent."""
+    """RNLI Lifeboat Station Finder agent — uses Gravitee MCP server for tools."""
 
     def __init__(self):
-        self.api_client = LifeboatAPIClient()
         self.llm = LLMClient()
+        self._mcp_tools: list[dict] = []
         self._initialized = False
 
     async def initialize(self):
-        """Verify the lifeboat API is reachable."""
-        url = f"{self.api_client.base_url}/health"
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-        logger.info("Lifeboat API is healthy")
-        self._initialized = True
+        """Fetch available MCP tools from the Gravitee gateway."""
+        try:
+            self._mcp_tools = await _fetch_mcp_tools()
+            self._initialized = True
+            logger.info("Agent initialized with %d MCP tools", len(self._mcp_tools))
+        except Exception as e:
+            logger.warning(
+                "Could not connect to MCP server at %s: %s — will retry on first request",
+                MCP_HTTP_URL,
+                e,
+            )
+            # Fall back to a direct health check of lifeboat-api
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    await client.get(f"{LIFEBOAT_API_BASE}/health")
+                logger.info("Lifeboat API is healthy (MCP server not yet ready)")
+            except Exception:
+                pass
+            self._initialized = True  # allow requests; MCP tools fetched lazily
 
-    async def _dispatch_tool(self, tool_name: str, args: dict) -> Any:
-        """Call the appropriate lifeboat API method."""
-        if tool_name == "find_nearest_stations":
-            location = args.get("location", "")
-            count = int(args.get("count", 3))
-            return await self.api_client.find_nearest_stations(location, count)
-        elif tool_name == "get_station_details":
-            station_name = args.get("station_name", "")
-            return await self.api_client.get_station_details(station_name)
-        elif tool_name == "list_stations_by_type":
-            station_type = args.get("station_type", "ALB")
-            return await self.api_client.list_stations_by_type(station_type)
-        elif tool_name == "list_stations_by_region":
-            region = args.get("region", "")
-            return await self.api_client.list_stations_by_region(region)
-        else:
-            return {"error": f"Unknown tool: {tool_name}"}
+    async def _ensure_mcp_tools(self) -> list[dict]:
+        """Lazily fetch MCP tools if not already cached."""
+        if not self._mcp_tools:
+            try:
+                self._mcp_tools = await _fetch_mcp_tools()
+            except Exception as e:
+                logger.error("Failed to fetch MCP tools: %s", e)
+        return self._mcp_tools
 
     async def process_request(self, raw_message: str) -> str:
         """Process a user message (with optional context prefix) and return a response."""
         # Extract user context if present
         context, message = extract_user_context(raw_message)
-        system_prompt = build_system_prompt(context)
+        # Two-phase prompts: short for tool selection, rich for result formatting
+        tool_prompt, fmt_prompt = build_system_prompts(context)
 
         if context:
             logger.info(
@@ -459,8 +405,10 @@ class RNLIAgent:
         logger.info("User: %s", message)
 
         try:
+            tools = await self._ensure_mcp_tools()
+
             content, tool_calls = await self.llm.process_query(
-                message, TOOLS, system_prompt=system_prompt
+                message, tools, system_prompt=tool_prompt
             )
 
             if not tool_calls:
@@ -477,12 +425,12 @@ class RNLIAgent:
             tool_name = tool_call["function"]["name"]
             tool_args = tool_call["function"]["arguments"]
 
-            logger.info("Calling tool: %s with args: %s", tool_name, tool_args)
-            tool_result = await self._dispatch_tool(tool_name, tool_args)
-            logger.info("Tool result received")
+            logger.info("Calling MCP tool: %s with args: %s", tool_name, tool_args)
+            tool_result = await _call_mcp_tool(tool_name, tool_args)
+            logger.info("MCP tool result received")
 
             final_response = await self.llm.process_tool_result(
-                message, tool_call, tool_result, system_prompt=system_prompt
+                message, tool_call, tool_result, system_prompt=fmt_prompt
             )
 
             logger.info("Response generated")
@@ -492,12 +440,6 @@ class RNLIAgent:
         except RateLimitError as e:
             logger.warning("Rate limit hit: %s", e)
             return "You have reached the request limit. Please wait a moment before trying again."
-        except httpx.HTTPError as e:
-            logger.error("API error: %s", e)
-            return (
-                "I encountered an issue connecting to the lifeboat station database. "
-                "Please try again in a moment."
-            )
         except Exception as e:
             logger.error("Unexpected error: %s", e, exc_info=True)
             return (
@@ -563,11 +505,10 @@ class RNLIRequestHandler(RequestHandler):
                 await self.agent.initialize()
             except Exception as e:
                 logger.warning(
-                    "Could not connect to lifeboat API on startup: %s. "
-                    "Will retry on first request.",
+                    "Could not initialize on startup: %s. Will retry on first request.",
                     e,
                 )
-                self.agent._initialized = True  # allow requests to proceed
+                self.agent._initialized = True
 
     async def on_message_send(self, params, context):
         await self._ensure_initialized()
