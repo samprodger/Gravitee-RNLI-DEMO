@@ -6,7 +6,7 @@
     <title>RNLI Lifeboat Station Finder</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -16,10 +16,18 @@
         <div class="nav-container">
             <div class="nav-logo">
                 <div class="nav-logo-icon">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                        <path d="M3 12h18M3 12c0 4.97 4.03 9 9 9s9-4.03 9-9M3 12c0-4.97 4.03-9 9-9s9 4.03 9 9"></path>
-                        <path d="M12 3v18"></path>
-                        <path d="M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4"></path>
+                    <!-- RNLI-inspired lifeboat wave logo -->
+                    <svg width="34" height="34" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <!-- Lifebelt ring -->
+                        <circle cx="17" cy="17" r="14" stroke="#ffd200" stroke-width="2.5" fill="none"/>
+                        <circle cx="17" cy="17" r="9" stroke="#ffd200" stroke-width="1.5" fill="none"/>
+                        <!-- Lifebelt segments (top, bottom, left, right) -->
+                        <path d="M17 3 L17 8" stroke="#ffd200" stroke-width="3" stroke-linecap="round"/>
+                        <path d="M17 26 L17 31" stroke="#ffd200" stroke-width="3" stroke-linecap="round"/>
+                        <path d="M3 17 L8 17" stroke="#ffd200" stroke-width="3" stroke-linecap="round"/>
+                        <path d="M26 17 L31 17" stroke="#ffd200" stroke-width="3" stroke-linecap="round"/>
+                        <!-- Wave inside -->
+                        <path d="M10 17 Q12 14 14 17 Q16 20 18 17 Q20 14 22 17 Q23 18.5 24 17" stroke="#dd2330" stroke-width="2" fill="none" stroke-linecap="round"/>
                     </svg>
                 </div>
                 <div class="nav-logo-text">
@@ -32,6 +40,46 @@
                 <a href="#about" class="nav-link">About</a>
             </div>
             <div class="nav-actions">
+                <a href="https://rnli.org/support-us/donate" target="_blank" rel="noopener" class="btn-donate" title="Support the RNLI">
+                    ❤️ Donate
+                </a>
+                <button id="signInBtn" class="btn-signin" title="Sign In with Gravitee AM">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                    Sign In
+                </button>
+                <div id="userMenu" class="user-menu hidden">
+                    <button id="userMenuBtn" class="user-menu-btn">
+                        <div class="user-avatar">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="12" cy="7" r="4"></circle>
+                            </svg>
+                        </div>
+                        <span id="userDisplayName">Joe D.</span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                    <div id="userDropdown" class="user-dropdown hidden">
+                        <div class="user-dropdown-info">
+                            <div class="user-dropdown-name" id="userDropdownName">Joe Doe</div>
+                            <div class="user-dropdown-email" id="userDropdownEmail">joe.doe@gravitee.io</div>
+                        </div>
+                        <div id="goldBadge" class="gold-member-badge hidden">
+                            ⭐ Gold Member — Exclusive access enabled
+                        </div>
+                        <hr class="user-dropdown-divider">
+                        <button id="logoutBtn" class="user-dropdown-item">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                                <polyline points="16 17 21 12 16 7"></polyline>
+                                <line x1="21" y1="12" x2="9" y2="12"></line>
+                            </svg>
+                            Sign Out
+                        </button>
+                    </div>
+                </div>
                 <button id="settingsBtn" class="btn-icon" title="Settings">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"></path>
@@ -45,11 +93,11 @@
     <!-- Hero Section -->
     <section class="hero">
         <div class="hero-content">
-            <div class="hero-badge">AI-Powered Station Finder</div>
+            <div class="hero-badge">🚤 AI-Powered · Gravitee API Gateway</div>
             <h1 class="hero-title">Find Your Nearest<br><span class="hero-highlight">RNLI Lifeboat Station</span></h1>
             <p class="hero-subtitle">
                 Ask our AI assistant to find RNLI lifeboat stations near any UK postcode or town.
-                Get instant information about all-weather and inshore lifeboats across the UK and Ireland.
+                Get instant information about all-weather and inshore lifeboats, postal addresses, and walking directions.
             </p>
             <div class="hero-search">
                 <div class="search-container">
@@ -76,7 +124,7 @@
                     </svg>
                     Chat with AI Assistant
                 </button>
-                <p class="hero-hint">Ask anything about RNLI stations</p>
+                <p class="hero-hint">Powered by Gravitee APIM &amp; AM</p>
             </div>
         </div>
         <div class="hero-visual">
@@ -85,9 +133,15 @@
                 <div class="wave wave-2"></div>
                 <div class="wave wave-3"></div>
                 <div class="hero-icon-wrap">
-                    <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5">
-                        <path d="M3 17l3-6 3 4 3-8 3 6 3-4 3 6"></path>
-                        <path d="M3 21h18"></path>
+                    <!-- Lifeboat icon -->
+                    <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5">
+                        <!-- Lifebelt -->
+                        <circle cx="12" cy="12" r="9" stroke="white" stroke-width="1.5" fill="none"/>
+                        <circle cx="12" cy="12" r="5" stroke="white" stroke-width="1.5" fill="none"/>
+                        <line x1="12" y1="3" x2="12" y2="7" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+                        <line x1="12" y1="17" x2="12" y2="21" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+                        <line x1="3" y1="12" x2="7" y2="12" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+                        <line x1="17" y1="12" x2="21" y2="12" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
                     </svg>
                 </div>
             </div>
@@ -98,9 +152,9 @@
     <section class="features" id="features">
         <div class="container">
             <h2 class="section-title">What Can I Help You With?</h2>
-            <p class="section-subtitle">Our AI assistant has comprehensive knowledge of all RNLI stations across the UK and Ireland.</p>
+            <p class="section-subtitle">Our AI assistant has comprehensive knowledge of all RNLI stations across the UK and Ireland — secured and governed by Gravitee.</p>
             <div class="features-grid">
-                <div class="feature-card" onclick="sendQuickMessage('Find my nearest lifeboat stations')">
+                <div class="feature-card" onclick="sendQuickMessage('Find my nearest lifeboat stations to London')">
                     <div class="feature-icon feature-icon-blue">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="12" cy="12" r="10"></circle>
@@ -112,8 +166,8 @@
                         </svg>
                     </div>
                     <h3>Find Your Nearest Station</h3>
-                    <p>Search by postcode or town to discover the closest RNLI lifeboat stations and their distances from you.</p>
-                    <span class="feature-tag">Try it</span>
+                    <p>Search by postcode or town to discover the closest RNLI lifeboat stations with distances, addresses and Google Maps walking directions.</p>
+                    <span class="feature-tag">Try it →</span>
                 </div>
                 <div class="feature-card" onclick="sendQuickMessage('Tell me about all-weather lifeboats (ALB stations)')">
                     <div class="feature-icon feature-icon-yellow">
@@ -123,30 +177,54 @@
                         </svg>
                     </div>
                     <h3>All-Weather Lifeboats</h3>
-                    <p>ALB stations operate large offshore lifeboats that can respond in any weather, day or night, far out at sea.</p>
-                    <span class="feature-tag">Learn more</span>
+                    <p>ALB stations operate large offshore lifeboats that can respond in any weather, day or night, far out at sea. Saving lives since 1824.</p>
+                    <span class="feature-tag">Learn more →</span>
                 </div>
                 <div class="feature-card" onclick="sendQuickMessage('What are inshore lifeboats (ILB stations)?')">
-                    <div class="feature-icon feature-icon-blue">
+                    <div class="feature-icon feature-icon-red">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M2 20h20M17 20V8l-5-5-5 5v12"></path>
                             <path d="M9 20v-7h6v7"></path>
                         </svg>
                     </div>
                     <h3>Inshore Lifeboats</h3>
-                    <p>ILB stations deploy smaller, faster boats for swift rescues close to the coastline and in sheltered waters.</p>
-                    <span class="feature-tag">Learn more</span>
+                    <p>ILB stations deploy smaller, faster boats for swift rescues close to the coastline, in harbours and sheltered waters.</p>
+                    <span class="feature-tag">Learn more →</span>
                 </div>
                 <div class="feature-card" onclick="sendQuickMessage('List all lifeboat stations in Scotland')">
-                    <div class="feature-icon feature-icon-yellow">
+                    <div class="feature-icon feature-icon-blue">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
                             <polyline points="9 22 9 12 15 12 15 22"></polyline>
                         </svg>
                     </div>
                     <h3>UK &amp; Ireland Coverage</h3>
-                    <p>Over 230 lifeboat stations protecting coastlines across England, Scotland, Wales, Northern Ireland, and the Channel Islands.</p>
-                    <span class="feature-tag">Explore</span>
+                    <p>Over 238 lifeboat stations protecting coastlines across England, Scotland, Wales, Northern Ireland, and the Channel Islands.</p>
+                    <span class="feature-tag">Explore →</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+
+    <!-- Visited Stations Section (shown when logged in) -->
+    <section id="visitedSection" class="visited-stations hidden">
+        <div class="container">
+            <div class="visited-header">
+                <div class="visited-badge">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 11l3 3L22 4"></path>
+                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                    </svg>
+                    Your Station History
+                </div>
+                <h2>Stations You've Visited</h2>
+                <p id="visitedSubtitle">Loading your visit history…</p>
+            </div>
+            <div id="visitedList" class="visited-list">
+                <div class="visited-loading">
+                    <div class="loading-spinner"></div>
+                    <p>Loading your visit history...</p>
                 </div>
             </div>
         </div>
@@ -159,7 +237,7 @@
                 <div class="about-content">
                     <h2>About the RNLI</h2>
                     <p>The Royal National Lifeboat Institution (RNLI) is a charity that saves lives at sea. It provides a 24-hour search and rescue service across the UK, Ireland, Isle of Man, and Channel Islands.</p>
-                    <p>With over 238 lifeboat stations and thousands of volunteer crew members, the RNLI responds to over 8,000 call-outs every year.</p>
+                    <p>With over 238 lifeboat stations and thousands of volunteer crew members, the RNLI responds to over 8,000 call-outs every year — entirely funded by donations.</p>
                     <a href="https://rnli.org" target="_blank" rel="noopener" class="btn btn-outline">
                         Visit RNLI.org
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -208,9 +286,14 @@
         <div class="chat-header">
             <div class="chat-header-info">
                 <div class="chat-bot-avatar">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"></path>
-                        <path d="M9 9h1v6H9zM14 9h1v6h-1z"></path>
+                    <!-- Lifebelt icon in chat header -->
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                        <circle cx="12" cy="12" r="9"></circle>
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="3" x2="12" y2="7" stroke-width="2.5" stroke-linecap="round"/>
+                        <line x1="12" y1="17" x2="12" y2="21" stroke-width="2.5" stroke-linecap="round"/>
+                        <line x1="3" y1="12" x2="7" y2="12" stroke-width="2.5" stroke-linecap="round"/>
+                        <line x1="17" y1="12" x2="21" y2="12" stroke-width="2.5" stroke-linecap="round"/>
                     </svg>
                 </div>
                 <div>
@@ -235,7 +318,7 @@
         <div class="chat-messages" id="chatMessages">
             <div class="message agent-message">
                 <div class="message-avatar">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M3 17l3-6 3 4 3-8 3 6 3-4 3 6"></path>
                         <path d="M3 21h18"></path>
                     </svg>
@@ -244,9 +327,9 @@
                     <p>Hello! I'm your RNLI Lifeboat Station Finder. I can help you:</p>
                     <ul>
                         <li>Find the nearest stations to any UK postcode or town</li>
+                        <li>Get postal addresses &amp; Google Maps walking directions</li>
                         <li>Explore stations by region (Scotland, Wales, etc.)</li>
                         <li>Learn about ALB and ILB station types</li>
-                        <li>Get details about specific stations</li>
                     </ul>
                     <p>What would you like to know?</p>
                 </div>
@@ -297,9 +380,9 @@
                             type="text"
                             id="agentCardUrl"
                             class="form-input"
-                            placeholder="http://localhost:8082/rnli-agent/.well-known/agent-card.json"
+                            placeholder="http://localhost:8082/stations-agent/.well-known/agent-card.json"
                         >
-                        <small class="form-hint">The URL to the RNLI AI Agent card endpoint</small>
+                        <small class="form-hint">The URL to the RNLI AI Agent card endpoint (via Gravitee Gateway)</small>
                     </div>
                     <div class="connection-header">
                         <div class="connection-status" id="agentConnectionStatus">
@@ -313,6 +396,18 @@
                     </div>
                 </div>
             </div>
+                <div class="connection-section" style="margin-top:20px; padding: 0 24px 20px; border-top: 1px solid var(--rnli-border);">
+                    <h3 style="margin-top:20px;">Sign In (Gravitee AM)</h3>
+                    <div class="form-group">
+                        <label for="oidcUrl">OIDC Discovery URL</label>
+                        <input type="text" id="oidcUrl" class="form-input" placeholder="http://localhost:8092/gravitee/oidc/.well-known/openid-configuration">
+                        <small class="form-hint">Gravitee AM OpenID Connect discovery endpoint</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="clientId">Client ID</label>
+                        <input type="text" id="clientId" class="form-input" placeholder="rnli-lifeboat">
+                    </div>
+                </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="cancelSettingsBtn">Close</button>
                 <button class="btn btn-primary" id="saveSettingsBtn">Save Settings</button>
