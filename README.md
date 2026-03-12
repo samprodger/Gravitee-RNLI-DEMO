@@ -178,7 +178,6 @@ The `gravitee-init` container runs once to import all APIs and configure AM. All
 | **APIM Console** | http://localhost:8084 | API Management — analytics, policies, APIs |
 | **APIM Gateway** | http://localhost:8082 | The Gravitee API Gateway |
 | **AM Console** | http://localhost:8081 | Access Management (login: `admin` / `adminadmin`) |
-| **AM Login** | http://localhost:8092/gravitee/login | OAuth2 login page with social login buttons |
 | **Lifeboat API** | http://localhost:8001 | Raw REST API (internal, also at `/lifeboat-api/` via gateway) |
 
 ---
@@ -274,7 +273,7 @@ Some data requires authentication. The `/history` endpoint (visited stations) is
 3. The website prefixes the user's chat message with their context: `[USER_CONTEXT:{name, plan, visits}]`
 4. The agent reads this context and personalises its responses
 
-The login page at [http://localhost:8092/gravitee/login](http://localhost:8092/gravitee/login) is a custom RNLI-branded form with decorative social login buttons (Google, Apple, Microsoft, GitHub — demo only).
+The login is triggered by clicking **Sign In** on the RNLI website — this starts the OAuth2 PKCE flow and redirects to the RNLI-branded AM login form (with decorative social login buttons — demo only). Do not navigate to the AM login URL directly; it requires OAuth2 parameters to work correctly.
 
 **Try it:**
 
