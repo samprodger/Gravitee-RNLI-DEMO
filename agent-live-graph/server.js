@@ -414,7 +414,7 @@ function fOther(evt, d) {
 /* ═══════════════════════════════════════════════════════════════
  * TCP Server — Gravitee Reporter events
  *
- * ALL events are collected in a single buffer. The /bookings-agent
+ * ALL events are collected in a single buffer. The /stations-agent
  * event (the outermost user-facing request) arrives last because it
  * wraps every sub-call. Its arrival triggers a flush:
  *
@@ -443,7 +443,7 @@ function flushBuffer() {
 
   if (!events.length) return;
 
-  /* ── separate the bookings-agent wrapper from inner events ── */
+  /* ── separate the stations-agent wrapper from inner events ── */
   const agentEvt    = events.find(e => e.isAgent);
   const innerEvents = events.filter(e => !e.isAgent);
   innerEvents.sort((a, b) => a.timestamp - b.timestamp);

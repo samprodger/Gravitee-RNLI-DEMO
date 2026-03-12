@@ -30,7 +30,7 @@ A hands-on demonstration of how to build, manage, and observe AI agents using th
    ```
    *(First run takes a few minutes — grab a coffee ☕)*
 
-5. **Visit the RNLI Website** 🌊
+5. **Visit the mock RNLI Website** 🌊
    Open **[http://localhost:8002](http://localhost:8002)** and chat with the AI agent:
 
    - **"What are the nearest lifeboat stations to Brighton?"**
@@ -43,9 +43,23 @@ A hands-on demonstration of how to build, manage, and observe AI agents using th
      *Requires login — sign in with `joe.doe@gravitee.io` / `HelloWorld@123`*
 
    - **After logging in:** *"When did I last visit a lifeboat station?"*
-     *Returns personalised visit history (Gold Member exclusive launch data included)*
+     *Returns personalised visit history*
 
-6. **Watch the Flow** 🔭
+6. **Demo Fine-Grained Access** 🏅 *(Optional)*
+   Try the three-tier data API directly:
+   ```bash
+   # Bronze — no auth, 4 columns
+   curl -s -X POST http://localhost:8082/databricks-stations/api/2.0/sql/statements \
+     -H "Content-Type: application/json" -d '{"statement":"SELECT * FROM stations"}'
+
+   # Silver — API key, 8 columns
+   curl -s -X POST http://localhost:8082/databricks-stations/api/2.0/sql/statements \
+     -H "Content-Type: application/json" \
+     -H "X-Gravitee-Api-Key: 592eafe3-fdf4-4a58-aeaf-e3fdf42a586b" \
+     -d '{"statement":"SELECT * FROM stations"}'
+   ```
+
+7. **Watch the Flow** 🔭
    Open the **[AI Agent Inspector](http://localhost:9002)** to see every step visualised in real time as you chat.
 
 ---
@@ -58,6 +72,7 @@ A hands-on demonstration of how to build, manage, and observe AI agents using th
 | **LLM Proxy** | How to route and proxy Large Language Model traffic through the gateway |
 | **AI Agents** | How agents reason, plan, and execute actions in a loop |
 | **Authentication** | How OAuth2/OIDC protects user-specific data via Gravitee AM |
+| **Fine-Grained Access** | How Bronze/Silver/Gold API plans enforce data tiers at the gateway |
 | **Real-Time Observability** | How to visualise every step of an AI Agent flow as it happens |
 
 ---
@@ -163,6 +178,7 @@ The `gravitee-init` container runs once to import all APIs and configure AM. All
 | **APIM Console** | http://localhost:8084 | API Management — analytics, policies, APIs |
 | **APIM Gateway** | http://localhost:8082 | The Gravitee API Gateway |
 | **AM Console** | http://localhost:8081 | Access Management (login: `admin` / `adminadmin`) |
+| **AM Login** | http://localhost:8092/gravitee/login | OAuth2 login page with social login buttons |
 | **Lifeboat API** | http://localhost:8001 | Raw REST API (internal, also at `/lifeboat-api/` via gateway) |
 
 ---
@@ -204,11 +220,11 @@ Open **[http://localhost:6274](http://localhost:6274)**:
 
 ### Part 2: LLM Proxy 🧠
 
-The agent uses an LLM (via Ollama) to decide *which tool to call* and to *format the response* into natural language. All LLM traffic goes through the Gravitee **LLM Proxy** at `/llm-proxy/`, providing:
+The agent uses an LLM (via Ollama) to decide *which MCP tool to call* and to *format the response* into natural language. All LLM traffic goes through the Gravitee **LLM Proxy** at `/llm-proxy/`, providing:
 
 - **Single entry point** for all LLM traffic
-- **Observability** — every LLM call is logged and visible in APIM Analytics
-- **Control** — routing, rate limiting, and guard rails can be added without touching agent code
+- **Observability** — every LLM call is logged and visible in Gravitee's Analytics
+- **Control** — routing, rate limiting, and guard rails can be added without touching agent code using Gravitee's UI
 - **Gateway-level timeout management** — protects against slow LLM responses
 
 You can see all LLM calls in the **APIM Console** at [http://localhost:8084](http://localhost:8084) — navigate to the **LLM Proxy** API → **Analytics**.
@@ -243,9 +259,13 @@ Every call in this loop goes through the **Gravitee Gateway** — all traffic is
 
 ---
 
-### Part 4: Authentication — Gold Member Access 🔐
+### Part 4: Authentication & Fine-Grained API Access 🔐
 
-Some data requires authentication. The `/history` endpoint (visited stations) is protected: you need to be logged in to fetch your personal visit history, and the Gold Member plan unlocks recent launch data.
+This demo showcases two complementary access control features.
+
+#### 4a. Authentication — RNLI Data Portal Login
+
+Some data requires authentication. The `/history` endpoint (visited stations) is protected: you need to be logged in to fetch your personal visit history.
 
 **How it works:**
 
@@ -254,6 +274,8 @@ Some data requires authentication. The `/history` endpoint (visited stations) is
 3. The website prefixes the user's chat message with their context: `[USER_CONTEXT:{name, plan, visits}]`
 4. The agent reads this context and personalises its responses
 
+The login page at [http://localhost:8092/gravitee/login](http://localhost:8092/gravitee/login) is a custom RNLI-branded form with decorative social login buttons (Google, Apple, Microsoft, GitHub — demo only).
+
 **Try it:**
 
 1. Open [http://localhost:8002](http://localhost:8002) and ask *"What stations have I visited?"* — this returns a generic fallback (no identity)
@@ -261,7 +283,41 @@ Some data requires authentication. The `/history` endpoint (visited stations) is
    - Email: `joe.doe@gravitee.io`
    - Password: `HelloWorld@123`
 3. Ask again — the agent now knows who you are and returns Joe's visit history
-4. As a **⭐ Gold Member**, you also see exclusive recent launch data for each visited station
+
+#### 4b. Fine-Grained API Access — Bronze / Silver / Gold Tiers
+
+The **RNLI Databricks Stations API** demonstrates gateway-enforced data tiers. Three API plans control what data each caller can see — no backend changes required.
+
+| Tier | Auth Method | Gateway Path | Columns Returned |
+|------|-------------|--------------|-----------------|
+| **Bronze** | None (Keyless) | `POST /databricks-stations/...` | 4 — id, name, type, region |
+| **Silver** | API Key (`X-Gravitee-Api-Key`) | same path + header | 8 — adds country, lat, lon, address |
+| **Gold** | JWT (via Gravitee AM OAuth2) | same path + `Authorization: Bearer` | 12 — adds crew count, launches/year, launch history |
+
+The gateway injects an `X-RNLI-Plan` header before the request reaches the backend, which selects the appropriate data tier. The plan check happens entirely at the gateway — the backend never sees credentials.
+
+**Try it — curl:**
+
+```bash
+# Bronze (no auth) — 4 columns
+curl -s -X POST http://localhost:8082/databricks-stations/api/2.0/sql/statements \
+  -H "Content-Type: application/json" \
+  -d '{"statement":"SELECT * FROM stations"}' | python3 -m json.tool
+
+# Silver (API key) — 8 columns
+curl -s -X POST http://localhost:8082/databricks-stations/api/2.0/sql/statements \
+  -H "Content-Type: application/json" \
+  -H "X-Gravitee-Api-Key: 592eafe3-fdf4-4a58-aeaf-e3fdf42a586b" \
+  -d '{"statement":"SELECT * FROM stations"}' | python3 -m json.tool
+```
+
+**Demo accounts:**
+
+| User | Credentials | Tier |
+|------|-------------|------|
+| Joe Doe (Gold) | `joe.doe@gravitee.io` / `HelloWorld@123` | JWT via OAuth2 |
+| Silver Subscriber | `silver.user@rnli.org` / `HelloWorld@123` | API Key (auto-provisioned) |
+| Anyone | No credentials | Bronze (Keyless) |
 
 ---
 
@@ -302,6 +358,7 @@ docker compose down
 | **LLM Proxy** | Centralise, observe, and control all LLM traffic through a single gateway |
 | **Agent Architecture** | Agents follow a Discover → Decide → Execute → Reflect loop |
 | **Authentication** | OAuth2/OIDC protects user-specific data; tokens carry identity and context |
+| **Fine-Grained Access** | Bronze/Silver/Gold API plans enforce data tiers at the gateway with zero backend changes |
 | **Observability** | Every agent step is visible in real time via the TCP Reporter + Agent Inspector |
 
 ---
@@ -349,3 +406,5 @@ This demo is tested and optimised for Apple Silicon. The docker-compose includes
 ---
 
 **Happy exploring! 🌊🚀**
+
+Sam 

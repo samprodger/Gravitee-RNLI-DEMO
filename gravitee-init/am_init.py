@@ -420,13 +420,7 @@ class AMInitializer:
     }
     .brand-name { font-size: 19px; font-weight: 700; color: #111827; }
     .brand-name span { color: #E8392A; }
-    .tier-badge {
-      display: inline-flex; align-items: center; gap: 5px;
-      background: #fef3c7; color: #92400e;
-      font-size: 11px; font-weight: 700; letter-spacing: 0.05em;
-      padding: 3px 10px; border-radius: 20px;
-      margin: 10px 0 28px 57px;
-    }
+    .brand { margin-bottom: 28px; }
     .alert-error {
       background: #fef2f2; border: 1px solid #fca5a5; color: #dc2626;
       padding: 11px 14px; border-radius: 8px; font-size: 14px; margin-bottom: 20px;
@@ -485,7 +479,6 @@ class AMInitializer:
     </div>
     <span class="brand-name">RNLI <span>Data Portal</span></span>
   </div>
-  <div class="tier-badge">&#127881; Gold Tier Access</div>
 
   <!-- Error -->
   <div th:if="${param.error != null}" class="alert-error">
@@ -503,7 +496,7 @@ class AMInitializer:
       <label for="password">Password</label>
       <input id="password" type="password" name="password" placeholder="&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;" required />
     </div>
-    <button type="submit" class="btn-signin">Sign in to Gold Tier</button>
+    <button type="submit" class="btn-signin">Sign in</button>
   </form>
 
   <!-- Social login (demo only — buttons are decorative) -->
@@ -564,42 +557,32 @@ class AMInitializer:
         log("Configuring custom login form with social login buttons...")
         url = f"{AM_BASE_URL}/management/organizations/{ORGANIZATION}/environments/{ENVIRONMENT}/domains/{self.domain_id}/forms"
 
-        # Check if a custom login form already exists
+        # Try to find an existing form and update via PUT, else create via POST
+        # Note: PUT body only accepts {content, enabled} — template/id fields are rejected
+        # AM returns a single form object (dict) when filtered by template, not a list
+        existing_id = None
         try:
             r = self.session.get(url, params={"template": "LOGIN"}, timeout=10)
             if r.ok:
                 forms = r.json()
-                if isinstance(forms, list):
-                    for form in forms:
-                        if form.get("template") == "LOGIN" and form.get("enabled"):
-                            log("✓ Custom login form already configured.")
-                            return True
+                if isinstance(forms, dict) and forms.get("id"):
+                    existing_id = forms.get("id")
+                elif isinstance(forms, list) and forms:
+                    existing_id = forms[0].get("id")
         except requests.exceptions.RequestException:
-            pass  # proceed to create
+            pass
 
-        payload = {
-            "template": "LOGIN",
-            "content": self.LOGIN_FORM_CONTENT,
-            "enabled": True,
-        }
+        put_payload  = {"content": self.LOGIN_FORM_CONTENT, "enabled": True}
+        post_payload = {"template": "LOGIN", "content": self.LOGIN_FORM_CONTENT, "enabled": True}
         try:
-            r = self.session.post(url, json=payload, timeout=15)
+            if existing_id:
+                r = self.session.put(f"{url}/{existing_id}", json=put_payload, timeout=15)
+            else:
+                r = self.session.post(url, json=post_payload, timeout=15)
             if r.ok:
-                log("✓ Custom login form with social buttons configured.")
+                action = "updated" if existing_id else "configured"
+                log(f"✓ Custom login form {action} with social buttons.")
                 return True
-            # Some versions require PUT if a form already exists
-            if r.status_code in (400, 409):
-                forms_r = self.session.get(url, params={"template": "LOGIN"}, timeout=10)
-                if forms_r.ok:
-                    existing = forms_r.json()
-                    if isinstance(existing, list) and existing:
-                        form_id = existing[0].get("id")
-                        put_r = self.session.put(
-                            f"{url}/{form_id}", json=payload, timeout=15
-                        )
-                        if put_r.ok:
-                            log("✓ Custom login form updated with social buttons.")
-                            return True
             log(f"WARNING: Could not configure login form ({r.status_code}): {r.text[:120]}")
             return True  # non-fatal
         except requests.exceptions.RequestException as e:

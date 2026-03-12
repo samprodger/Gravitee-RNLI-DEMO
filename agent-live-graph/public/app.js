@@ -725,9 +725,9 @@
           <div class="wc-body">
             <span class="wc-title">Send a curl request</span>
             <span class="wc-desc">Call the agent directly from your terminal:</span>
-            <code class="wc-code">curl -X POST http://localhost:8082/bookings-agent/ \\
+            <code class="wc-code">curl -X POST http://localhost:8082/stations-agent/ \\
   -H "Content-Type: application/json" \\
-  -d '{"jsonrpc":"2.0","method":"message/send","params":{"message":{"role":"user","parts":[{"text":"Any hotels in Paris?"}]}}}'</code>
+  -d '{"jsonrpc":"2.0","method":"message/send","params":{"message":{"role":"user","parts":[{"text":"Which RNLI stations are in Scotland?"}]}}}'</code>
           </div>
         </div>
       </div>`;
@@ -743,8 +743,8 @@
     { type: 'divider', label: 'Phase 1 — User Request' },
     {
       type: 'arrow', from: 'client', to: 'gateway',
-      label: 'POST /bookings-agent/',
-      message: { lane: 'gateway', text: 'Hello, any hotels in Paris?' },
+      label: 'POST /stations-agent/',
+      message: { lane: 'gateway', text: 'Which RNLI stations are in Scotland?' },
       policies: [], plan: 'Keyless',
     },
     {
@@ -757,14 +757,14 @@
     { type: 'divider', label: 'Phase 2 — Tool Discovery' },
     {
       type: 'arrow', from: 'agent', to: 'gateway',
-      label: 'POST /hotels/mcp',
+      label: 'POST /lifeboat-mcp',
       message: { lane: 'gateway', text: 'MCP tools/list request' },
       policies: [], plan: 'Keyless',
     },
     {
       type: 'arrow', from: 'gateway', to: 'agent',
       label: '200 — 12ms',
-      message: { lane: 'agent', text: '2 tools discovered', toolList: ['getAccommodations', 'getBookings'] },
+      message: { lane: 'agent', text: '2 tools discovered', toolList: ['listStationsByRegion', 'findNearestStations'] },
       badge: { type: 'ok', text: '12ms / 3ms gw' },
     },
 
@@ -787,12 +787,12 @@
     {
       type: 'arrow', from: 'llm', to: 'gateway',
       label: '200',
-      message: { lane: 'gateway', text: 'Call getAccommodations' },
+      message: { lane: 'gateway', text: 'Call listStationsByRegion' },
     },
     {
       type: 'arrow', from: 'gateway', to: 'agent',
       label: '200 — 320ms',
-      message: { lane: 'agent', text: 'Call getAccommodations' },
+      message: { lane: 'agent', text: 'Call listStationsByRegion' },
       badge: { type: 'ok', text: '320ms / 850 tokens / 8ms gw' },
     },
 
@@ -800,27 +800,24 @@
     { type: 'divider', label: 'Phase 4 — Tool Execution' },
     {
       type: 'arrow', from: 'agent', to: 'gateway',
-      label: 'POST /hotels/mcp',
-      message: { lane: 'gateway', text: 'MCP tools/call — getAccommodations', toolCall: { name: 'getAccommodations', args: { city: 'Paris' } } },
-      policies: [
-        { name: 'OAuth2', passed: true },
-        { name: 'MCP ACL', passed: true },
-      ], plan: 'OAuth2',
+      label: 'POST /lifeboat-mcp',
+      message: { lane: 'gateway', text: 'MCP tools/call — listStationsByRegion', toolCall: { name: 'listStationsByRegion', args: { region: 'Scotland' } } },
+      policies: [], plan: 'Keyless',
     },
     {
       type: 'arrow', from: 'gateway', to: 'api',
-      label: 'GET /accommodations?city=Paris',
-      message: { lane: 'api', text: 'Get Accommodations' },
+      label: 'GET /stations?region=Scotland',
+      message: { lane: 'api', text: 'List Stations by Region' },
     },
     {
       type: 'arrow', from: 'api', to: 'gateway',
       label: '200',
-      message: { lane: 'gateway', text: '3 accommodations returned' },
+      message: { lane: 'gateway', text: '4 stations returned' },
     },
     {
       type: 'arrow', from: 'gateway', to: 'agent',
       label: '200 — 45ms',
-      message: { lane: 'agent', text: '3 accommodations returned' },
+      message: { lane: 'agent', text: '4 stations returned' },
       badge: { type: 'ok', text: '45ms / 6ms gw' },
     },
 
