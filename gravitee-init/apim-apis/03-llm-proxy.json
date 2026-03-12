@@ -4,7 +4,7 @@
     "apiVersion": "1.0",
     "definitionVersion": "V4",
     "type": "PROXY",
-    "description": "OpenAI-compatible LLM proxy routing to local Ollama. Used by the RNLI agent for natural-language understanding.",
+    "description": "OpenAI-compatible LLM gateway routing to local Ollama. Includes AI guard rails (toxicity blocking), rate limiting, and 5-minute response caching.",
     "tags": [],
     "listeners": [
       {
@@ -14,29 +14,20 @@
         ],
         "entrypoints": [
           { "type": "http-proxy" }
-        ],
-        "cors": {
-          "enabled": true,
-          "allowOrigin": ["*"],
-          "allowMethods": ["GET","POST","PUT","DELETE","OPTIONS","PATCH"],
-          "allowHeaders": ["Content-Type","Authorization","Accept","Origin","X-Requested-With"],
-          "exposeHeaders": [],
-          "allowCredentials": false,
-          "maxAge": 86400,
-          "runPolicies": false
-        }
+        ]
       }
     ],
     "endpointGroups": [
       {
-        "name": "default-group",
+        "name": "ollama",
         "type": "http-proxy",
         "sharedConfiguration": "{\"proxy\":{\"useSystemProxy\":false,\"enabled\":false},\"http\":{\"keepAliveTimeout\":30000,\"keepAlive\":true,\"propagateClientHost\":false,\"followRedirects\":false,\"readTimeout\":120000,\"idleTimeout\":0,\"connectTimeout\":5000,\"useCompression\":true,\"maxConcurrentConnections\":20,\"version\":\"HTTP_1_1\",\"pipelining\":false},\"ssl\":{\"keyStore\":{\"type\":\"\"},\"hostnameVerifier\":true,\"trustStore\":{\"type\":\"\"},\"trustAll\":false}}",
         "endpoints": [
           {
-            "name": "ollama-local",
+            "name": "ollama default endpoint",
             "type": "http-proxy",
             "weight": 1,
+            "inheritConfiguration": true,
             "configuration": {
               "target": "http://host.docker.internal:11434/v1"
             }
@@ -63,7 +54,103 @@
       "mode": "DEFAULT",
       "matchRequired": false
     },
-    "flows": [],
+    "flows": [
+      {
+        "enabled": true,
+        "selectors": [
+          {
+            "type": "HTTP",
+            "path": "/chat/completions",
+            "pathOperator": "EQUALS",
+            "methods": ["POST"]
+          }
+        ],
+        "request": [
+          {
+            "name": "AI Guard Rails — Toxicity Block",
+            "description": "Block toxic or harmful prompts before they reach the LLM",
+            "enabled": true,
+            "policy": "ai-prompt-guard-rails",
+            "configuration": {
+              "sensitivityThreshold": 0.5,
+              "resourceName": "toxicity-classifier",
+              "contentChecks": "toxic",
+              "promptLocation": "{#jsonPath(#request.content, '$.messages[?(@.role==\"user\")].content')}",
+              "requestPolicy": "BLOCK_REQUEST"
+            }
+          },
+          {
+            "name": "Rate Limit",
+            "description": "Limit requests to prevent LLM abuse and cost overruns",
+            "enabled": true,
+            "policy": "rate-limit",
+            "configuration": {
+              "addHeaders": true,
+              "rate": {
+                "useKeyOnly": false,
+                "periodTime": 1,
+                "limit": 10,
+                "periodTimeUnit": "MINUTES",
+                "key": ""
+              }
+            }
+          },
+          {
+            "name": "LLM Response Cache",
+            "description": "Return cached responses for identical prompts (5-minute TTL)",
+            "enabled": true,
+            "policy": "cache",
+            "configuration": {
+              "cacheName": "llm-response-cache",
+              "timeToLiveSeconds": 300,
+              "useResponseCacheHeaders": false,
+              "scope": "API",
+              "methods": ["POST"],
+              "responseCondition": "{#response.status == 200}",
+              "key": "{#request.content}"
+            }
+          }
+        ],
+        "response": [],
+        "subscribe": [],
+        "publish": [],
+        "connect": [],
+        "interact": [],
+        "tags": []
+      },
+      {
+        "enabled": true,
+        "selectors": [
+          {
+            "type": "HTTP",
+            "path": "/models",
+            "pathOperator": "EQUALS",
+            "methods": ["GET"]
+          }
+        ],
+        "request": [],
+        "response": [],
+        "subscribe": [],
+        "publish": [],
+        "connect": [],
+        "interact": [],
+        "tags": []
+      }
+    ],
+    "resources": [
+      {
+        "name": "toxicity-classifier",
+        "type": "ai-model-text-classification",
+        "configuration": "{\"model\":{\"type\":\"GRAVITEE_IO_DISTILBERT_MULTILINGUAL_TOXICITY_CLASSIFIER\"}}",
+        "enabled": true
+      },
+      {
+        "name": "llm-response-cache",
+        "type": "cache",
+        "configuration": "{\"timeToLiveSeconds\":300,\"maxEntriesLocalHeap\":100,\"maxEntriesLocalDisk\":0}",
+        "enabled": true
+      }
+    ],
     "plans": [
       {
         "name": "Free Plan",

@@ -4,8 +4,9 @@ Gravitee APIM initialisation script for the RNLI Lifeboat Station Finder demo.
 Waits for the Management API to be ready, then imports and publishes:
   1. RNLI Lifeboat Stations API  (proxy → lifeboat-api:8000, keyless plan)
   2. RNLI Stations Agent API     (proxy → rnli-a2a-agent:8001, keyless plan)
-  3. LLM Proxy API               (proxy → host.docker.internal:11434, keyless plan)
+  3. LLM Proxy API               (proxy → host.docker.internal:11434/v1, guard rails + rate limit + cache)
   4. RNLI Visited Stations API   (proxy → lifeboat-api:8000, JWT plan via AM JWKS)
+  5. RNLI Lifeboat MCP Server    (proxy → lifeboat-api:8000, MCP entrypoint)
 """
 
 import json
@@ -66,26 +67,84 @@ def wait_for_apim(session: requests.Session):
     sys.exit(1)
 
 
+def get_api_type(session: requests.Session, api_id: str) -> str | None:
+    """Return the type ('PROXY', 'LLM_PROXY', etc.) of an existing API."""
+    url = f"{APIM_BASE_URL}/management/v2/environments/{ENVIRONMENT}/apis/{api_id}"
+    r = session.get(url, timeout=10)
+    if r.ok:
+        return r.json().get("type")
+    return None
+
+
+def delete_api(session: requests.Session, api_id: str, api_name: str) -> bool:
+    """Close plans, stop, and delete an API. Returns True on success."""
+    base = f"{APIM_BASE_URL}/management/v2/environments/{ENVIRONMENT}/apis/{api_id}"
+    # Close and delete all plans first
+    r = session.get(f"{base}/plans", timeout=10)
+    if r.ok:
+        for plan in r.json().get("data", []):
+            pid = plan.get("id")
+            if (plan.get("status") or "").upper() == "PUBLISHED":
+                session.post(f"{base}/plans/{pid}/_close", timeout=10)
+            session.delete(f"{base}/plans/{pid}", timeout=10)
+    # Stop then delete
+    session.post(f"{base}/_stop", timeout=10)
+    del_r = session.delete(base, timeout=10)
+    if del_r.ok:
+        log(f"  Deleted '{api_name}' (type migration)")
+        return True
+    log(f"  WARNING: could not delete '{api_name}': {del_r.text[:120]}")
+    return False
+
+
 def import_api(session: requests.Session, definition: dict) -> str | None:
-    """Import an API definition; return the API id or None on failure."""
+    """Import an API definition; return the API id or None on failure.
+
+    If the API already exists with a different type (e.g. LLM_PROXY vs PROXY),
+    the old API is deleted and re-imported so the type change takes effect.
+    Checks for type mismatches BEFORE attempting the import to avoid relying
+    on the error response to detect conflicts.
+    """
     api_name = definition.get("api", {}).get("name", "unknown")
+    wanted_type = definition.get("api", {}).get("type", "PROXY")
     url = f"{APIM_BASE_URL}/management/v2/environments/{ENVIRONMENT}/apis/_import/definition"
+
+    # Pre-check: does an API with this name already exist?
+    existing_id = get_api_id_by_name(session, api_name)
+    if existing_id:
+        existing_type = get_api_type(session, existing_id)
+        if existing_type and existing_type != wanted_type:
+            log(f"  API '{api_name}' type mismatch ({existing_type} → {wanted_type}) — re-creating")
+            if delete_api(session, existing_id, api_name):
+                time.sleep(2)  # brief pause for MongoDB consistency
+                existing_id = None  # fall through to fresh import below
+            else:
+                log(f"  WARNING: could not delete '{api_name}'; keeping existing ({existing_type})")
+                return existing_id
+        else:
+            log(f"  API '{api_name}' already exists ({existing_type}) — looking up ID")
+            return existing_id
+
+    # Fresh import (either new API or post-deletion re-import)
     r = session.post(url, json=definition, timeout=30)
 
     if r.status_code == 400:
         err = r.text.lower()
         if "already exists" in err or "duplicate" in err:
-            log(f"  API '{api_name}' already exists — looking up ID")
-            return get_api_id_by_name(session, api_name)
-        log(f"  ERROR importing '{api_name}': {r.text}")
+            # Shouldn't happen if pre-check ran, but handle gracefully
+            fallback_id = get_api_id_by_name(session, api_name)
+            if fallback_id:
+                log(f"  API '{api_name}' already exists — looking up ID")
+                return fallback_id
+        log(f"  ERROR importing '{api_name}': {r.text[:120]}")
         return None
 
     if not r.ok:
-        log(f"  ERROR importing '{api_name}': {r.status_code} {r.text}")
+        log(f"  ERROR importing '{api_name}': {r.status_code} {r.text[:120]}")
         return None
 
     api_id = r.json().get("id")
-    log(f"  Imported '{api_name}' → {api_id}")
+    log(f"  Imported '{api_name}' as {wanted_type} → {api_id}")
     return api_id
 
 
@@ -255,13 +314,14 @@ def publish_and_start(session: requests.Session, api_id: str, api_name: str, use
     if r.ok:
         config = r.json()
         config["lifecycleState"] = "PUBLISHED"
-        # Apply endpoint group config from the definition (e.g. updated timeouts)
         if definition:
             api_def = definition.get("api", {})
+
+            # ── endpointGroups (timeouts, providers, models) ──────────────────
             if "endpointGroups" in api_def:
                 egs = api_def["endpointGroups"]
-                # Gravitee stores sharedConfiguration as a dict; the JSON file may have it
-                # as a JSON-encoded string — parse it so the PUT sends the correct type.
+                # Gravitee stores sharedConfiguration as a dict; JSON files may
+                # have it as a JSON-encoded string — parse so PUT sends the right type.
                 for eg in egs:
                     sc = eg.get("sharedConfiguration")
                     if isinstance(sc, str):
@@ -269,12 +329,40 @@ def publish_and_start(session: requests.Session, api_id: str, api_name: str, use
                             eg["sharedConfiguration"] = json.loads(sc)
                         except json.JSONDecodeError:
                             pass
+                    # Same for any endpoint-level sharedConfigurationOverride
+                    for ep in eg.get("endpoints", []):
+                        sco = ep.get("sharedConfigurationOverride")
+                        if isinstance(sco, str):
+                            try:
+                                ep["sharedConfigurationOverride"] = json.loads(sco)
+                            except json.JSONDecodeError:
+                                pass
                 config["endpointGroups"] = egs
                 log(f"  Updating endpointGroups for '{api_name}'")
-            # Apply analytics/logging config from the definition
+
+            # ── flows (policies: guard rails, rate limit, cache, etc.) ─────────
+            if "flows" in api_def:
+                config["flows"] = api_def["flows"]
+                log(f"  Updating flows for '{api_name}'")
+
+            # ── resources (toxicity classifier, cache, etc.) ──────────────────
+            if "resources" in api_def:
+                # Resource configurations may be JSON-encoded strings
+                for res in api_def["resources"]:
+                    cfg = res.get("configuration")
+                    if isinstance(cfg, str):
+                        try:
+                            res["configuration"] = json.loads(cfg)
+                        except json.JSONDecodeError:
+                            pass
+                config["resources"] = api_def["resources"]
+                log(f"  Updating resources for '{api_name}'")
+
+            # ── analytics (payload logging) ───────────────────────────────────
             if "analytics" in api_def:
                 config["analytics"] = api_def["analytics"]
                 log(f"  Updating analytics for '{api_name}'")
+
         session.put(base, json=config, timeout=10)
 
     r = session.post(f"{base}/_start", timeout=10)
@@ -283,13 +371,18 @@ def publish_and_start(session: requests.Session, api_id: str, api_name: str, use
     else:
         log(f"  WARNING: could not start '{api_name}': {r.text}")
 
-    # Force a deploy event so the gateway picks up plan changes immediately.
-    # The v1 /deploy endpoint writes a proper deployment event to MongoDB.
-    deploy_url = (
-        f"{APIM_BASE_URL}/management/organizations/{ORGANIZATION}"
-        f"/environments/{ENVIRONMENT}/apis/{api_id}/deploy"
-    )
-    dr = session.post(deploy_url, timeout=10)
+    # Force a deploy event so the gateway picks up changes immediately.
+    # LLM_PROXY uses the v2 /deployments endpoint; other types use v1 /deploy.
+    api_type = definition.get("api", {}).get("type", "PROXY") if definition else "PROXY"
+    if api_type == "LLM_PROXY":
+        deploy_url = f"{APIM_BASE_URL}/management/v2/environments/{ENVIRONMENT}/apis/{api_id}/deployments"
+        dr = session.post(deploy_url, json={"deploymentLabel": "init"}, timeout=15)
+    else:
+        deploy_url = (
+            f"{APIM_BASE_URL}/management/organizations/{ORGANIZATION}"
+            f"/environments/{ENVIRONMENT}/apis/{api_id}/deploy"
+        )
+        dr = session.post(deploy_url, timeout=10)
     if dr.ok:
         log(f"  '{api_name}' deployed to gateway")
     else:

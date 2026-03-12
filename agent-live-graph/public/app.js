@@ -710,8 +710,8 @@
             </svg>
           </div>
           <div class="wc-body">
-            <span class="wc-title">Chat on the ACME Hotels demo site</span>
-            <span class="wc-desc">Open the workshop website and use the AI chatbot. Try simple queries, ask for private data, or trigger guardrails and rate limits.</span>
+            <span class="wc-title">Chat on the RNLI AI Find My demo site</span>
+            <span class="wc-desc">Open the Mock RNLI website and use the AI chatbot. Try simple queries, ask for private data, or trigger guardrails and rate limits.</span>
           </div>
           <svg class="wc-arrow" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
