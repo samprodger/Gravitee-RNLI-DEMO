@@ -218,6 +218,16 @@ services:
       - "8001:8000"
     networks: [northbound, southbound]
 
+  databricks-stations-api:
+    build:
+      context: ./databricks-stations-api
+      dockerfile: Dockerfile
+    container_name: databricks-stations-api
+    restart: unless-stopped
+    ports:
+      - "8004:8000"
+    networks: [northbound, southbound]
+
   rnli-a2a-agent:
     build:
       context: ./rnli-a2a-agent

@@ -1,0 +1,220 @@
+{
+  "_rnli_multi_plans": true,
+  "_rnli_jwt_app_client_id": "rnli-lifeboat",
+  "_rnli_jwt_app_name": "RNLI Lifeboat Website",
+  "export": {
+    "date": "2026-03-12T09:00:00.000000000Z",
+    "apimVersion": "4.10.0"
+  },
+  "api": {
+    "definitionVersion": "V4",
+    "type": "PROXY",
+    "name": "RNLI Databricks Stations API",
+    "apiVersion": "1.0",
+    "description": "Mock Databricks SQL API returning RNLI lifeboat station data. Access tier enforced by Gravitee — Bronze (keyless) returns summary data, Gold (JWT) returns full data with coordinates, addresses and recent launch information.",
+    "tags": [],
+    "labels": ["databricks", "bronze", "gold", "monetisation"],
+    "listeners": [
+      {
+        "type": "HTTP",
+        "paths": [
+          { "path": "/databricks-stations/" }
+        ],
+        "entrypoints": [
+          { "type": "http-proxy" }
+        ],
+        "cors": {
+          "enabled": true,
+          "allowOrigin": ["*"],
+          "allowMethods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+          "allowHeaders": ["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
+          "exposeHeaders": [],
+          "allowCredentials": false,
+          "maxAge": 86400,
+          "runPolicies": false
+        }
+      }
+    ],
+    "endpointGroups": [
+      {
+        "name": "default-group",
+        "type": "http-proxy",
+        "endpoints": [
+          {
+            "name": "databricks-stations-api",
+            "type": "http-proxy",
+            "weight": 1,
+            "configuration": {
+              "target": "http://databricks-stations-api:8000"
+            }
+          }
+        ]
+      }
+    ],
+    "analytics": {
+      "enabled": true,
+      "logging": {
+        "content": {
+          "headers": true,
+          "payload": true,
+          "messageHeaders": false,
+          "messagePayload": false,
+          "messageMetadata": false
+        },
+        "phase": {
+          "request": true,
+          "response": true
+        },
+        "mode": {
+          "endpoint": true,
+          "entrypoint": true
+        }
+      },
+      "tracing": {
+        "enabled": false,
+        "verbose": false
+      }
+    },
+    "flowExecution": {
+      "mode": "DEFAULT",
+      "matchRequired": false
+    },
+    "flows": [],
+    "state": "STARTED",
+    "visibility": "PRIVATE",
+    "lifecycleState": "PUBLISHED",
+    "disableMembershipNotifications": false,
+    "groups": [],
+    "categories": [],
+    "originContext": {
+      "origin": "MANAGEMENT"
+    },
+    "responseTemplates": {},
+    "resources": [],
+    "properties": []
+  },
+  "pages": [],
+  "plans": [
+    {
+      "definitionVersion": "V4",
+      "name": "Bronze",
+      "description": "Free public access — returns station name, type and region only. No authentication required.",
+      "security": {
+        "type": "KEY_LESS",
+        "configuration": {}
+      },
+      "mode": "STANDARD",
+      "status": "PUBLISHED",
+      "characteristics": [],
+      "commentRequired": false,
+      "excludedGroups": [],
+      "generalConditions": "",
+      "order": 1,
+      "tags": [],
+      "type": "API",
+      "validation": "AUTO",
+      "flows": [
+        {
+          "name": "Inject Bronze Plan Header",
+          "enabled": true,
+          "selectors": [
+            {
+              "type": "HTTP",
+              "path": "/",
+              "pathOperator": "STARTS_WITH",
+              "methods": ["GET", "POST", "OPTIONS"]
+            }
+          ],
+          "request": [
+            {
+              "name": "Set Bronze tier header",
+              "enabled": true,
+              "policy": "transform-headers",
+              "configuration": {
+                "addHeaders": [
+                  {
+                    "name": "X-RNLI-Plan",
+                    "value": "bronze"
+                  }
+                ],
+                "removeHeaders": [],
+                "whitelistHeaders": []
+              }
+            }
+          ],
+          "response": [],
+          "publish": [],
+          "subscribe": [],
+          "tags": []
+        }
+      ]
+    },
+    {
+      "definitionVersion": "V4",
+      "name": "Gold",
+      "description": "Authenticated access with JWT via Gravitee AM — returns full station data including GPS coordinates, postal address, crew strength, annual launch statistics, and recent lifeboat callout details.",
+      "security": {
+        "type": "JWT",
+        "configuration": {
+          "signature": "RSA_RS256",
+          "publicKeyResolver": "JWKS_URL",
+          "resolverParameter": "http://gio-am-gateway:8092/gravitee/oidc/.well-known/jwks.json",
+          "connectTimeout": 2000,
+          "requestTimeout": 2000,
+          "followRedirects": false,
+          "useSystemProxy": false,
+          "extractClaims": true,
+          "propagateAuthHeader": true,
+          "userClaim": "sub"
+        }
+      },
+      "mode": "STANDARD",
+      "status": "PUBLISHED",
+      "characteristics": [],
+      "commentRequired": false,
+      "excludedGroups": [],
+      "generalConditions": "",
+      "order": 2,
+      "tags": [],
+      "type": "API",
+      "validation": "AUTO",
+      "flows": [
+        {
+          "name": "Inject Gold Plan Header",
+          "enabled": true,
+          "selectors": [
+            {
+              "type": "HTTP",
+              "path": "/",
+              "pathOperator": "STARTS_WITH",
+              "methods": ["GET", "POST", "OPTIONS"]
+            }
+          ],
+          "request": [
+            {
+              "name": "Set Gold tier header",
+              "enabled": true,
+              "policy": "transform-headers",
+              "configuration": {
+                "addHeaders": [
+                  {
+                    "name": "X-RNLI-Plan",
+                    "value": "gold"
+                  }
+                ],
+                "removeHeaders": [],
+                "whitelistHeaders": []
+              }
+            }
+          ],
+          "response": [],
+          "publish": [],
+          "subscribe": [],
+          "tags": []
+        }
+      ]
+    }
+  ],
+  "apiPicture": null,
+  "apiMedia": []
+}
