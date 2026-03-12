@@ -742,7 +742,10 @@ async function handleOAuthCallback() {
         window.history.replaceState({}, document.title, window.location.pathname);
 
         updateUserDisplay();
-        fetchVisitedStations();
+        // Visit history is a Gold-exclusive feature
+        if (getUserPlan() === 'gold') {
+            fetchVisitedStations();
+        }
     } catch (err) {
         console.error('[Auth] Callback error:', err);
         alert('Authentication failed: ' + err.message);
@@ -772,7 +775,10 @@ async function checkStoredAuth() {
             } catch (_) {}
         }
 
-        fetchVisitedStations();
+        // Visit history is a Gold-exclusive feature
+        if (getUserPlan() === 'gold') {
+            fetchVisitedStations();
+        }
     } else {
         updateUserDisplay();
     }
@@ -864,8 +870,12 @@ function updateUserDisplay() {
             }
         }
 
-        // Show visited section
-        authEls.visitedSection?.classList.remove('hidden');
+        // Show visited section for Gold members only (personal visit history is a Gold-exclusive feature)
+        if (isGold) {
+            authEls.visitedSection?.classList.remove('hidden');
+        } else {
+            authEls.visitedSection?.classList.add('hidden');
+        }
 
         // Personalise the chat welcome message (once)
         if (!welcomeMessagePersonalized) {
