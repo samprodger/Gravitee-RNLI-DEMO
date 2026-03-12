@@ -444,7 +444,10 @@ def ensure_apim_application(session: requests.Session, client_id: str, app_name:
     # Check if it already exists
     r = session.get(url, timeout=10)
     if r.ok:
-        for app in r.json().get("data", []):
+        raw = r.json()
+        # APIM may return a list directly or a paginated {"data": [...]} object
+        apps_list = raw.get("data", []) if isinstance(raw, dict) else raw
+        for app in apps_list:
             settings = app.get("settings", {}) or {}
             app_client_id = (
                 settings.get("app", {}).get("client_id", "")
@@ -469,6 +472,122 @@ def ensure_apim_application(session: requests.Session, client_id: str, app_name:
         return app_id
     log(f"  WARNING: could not create APIM application: {cr.text[:120]}")
     return None
+
+
+def ensure_apikey_subscription(
+    session: requests.Session,
+    api_id: str,
+    api_name: str,
+    app_name: str,
+    custom_key: str = "rnli-silver-demo-key",
+):
+    """
+    Ensure a Gravitee APIM application exists, is subscribed to the API's API_KEY plan,
+    and has an API key. Logs the key prominently — required for demo use.
+
+    Tries to create a custom API key for predictable demo use; falls back to
+    logging the auto-generated key if the gateway doesn't allow custom keys.
+    """
+    base = f"{APIM_BASE_URL}/management/v2/environments/{ENVIRONMENT}/apis/{api_id}"
+    apps_url = f"{APIM_BASE_URL}/management/organizations/{ORGANIZATION}/environments/{ENVIRONMENT}/applications"
+
+    # ── Find or create the APIM application ────────────────────────────────
+    app_id: str | None = None
+    r = session.get(apps_url, timeout=10)
+    if r.ok:
+        raw = r.json()
+        apps_list = raw.get("data", []) if isinstance(raw, dict) else raw
+        for app in apps_list:
+            if app.get("name") == app_name:
+                app_id = app.get("id")
+                log(f"  APIM application '{app_name}' already exists: {app_id}")
+                break
+
+    if not app_id:
+        log(f"  Creating APIM application '{app_name}'...")
+        cr = session.post(
+            apps_url,
+            json={
+                "name": app_name,
+                "description": "Silver tier subscriber — API key access to RNLI station location data",
+                "applicationType": "SIMPLE",
+            },
+            timeout=10,
+        )
+        if cr.ok:
+            app_id = cr.json().get("id")
+            log(f"  ✓ Created APIM application '{app_name}': {app_id}")
+        else:
+            log(f"  WARNING: could not create application '{app_name}': {cr.text[:120]}")
+            return
+
+    # ── Find the API_KEY plan ───────────────────────────────────────────────
+    r = session.get(f"{base}/plans", timeout=10)
+    if not r.ok:
+        log(f"  WARNING: could not list plans for API key subscription: {r.text[:80]}")
+        return
+    apikey_plan_id: str | None = None
+    for plan in r.json().get("data", []):
+        if ((plan.get("security") or {}).get("type") or "").upper() == "API_KEY":
+            apikey_plan_id = plan.get("id")
+            break
+    if not apikey_plan_id:
+        log(f"  WARNING: no API_KEY plan found for '{api_name}' — skipping")
+        return
+
+    # ── Check for existing subscription ────────────────────────────────────
+    subs_r = session.get(f"{base}/subscriptions", timeout=10)
+    if subs_r.ok:
+        for sub in subs_r.json().get("data", []):
+            if (
+                sub.get("plan", {}).get("id") == apikey_plan_id
+                and sub.get("status") in ("ACCEPTED", "APPROVED")
+            ):
+                sub_id = sub.get("id")
+                log(f"  API_KEY subscription already active for '{api_name}' (sub={sub_id})")
+                _log_api_key(session, api_id, sub_id)
+                return
+
+    # ── Create and accept subscription ─────────────────────────────────────
+    log(f"  Creating API_KEY plan subscription for '{api_name}'...")
+    sub_r = session.post(
+        f"{base}/subscriptions",
+        json={"applicationId": app_id, "planId": apikey_plan_id},
+        timeout=10,
+    )
+    if not sub_r.ok:
+        log(f"  WARNING: could not create subscription: {sub_r.text[:120]}")
+        return
+    sub_id = sub_r.json().get("id")
+
+    # AUTO validation plans are accepted automatically; _accept may return 400 — ignore it
+    acc_r = session.post(f"{base}/subscriptions/{sub_id}/_accept", json={}, timeout=10)
+    if not acc_r.ok and "cannot accept" not in acc_r.text.lower():
+        log(f"  WARNING: could not accept subscription: {acc_r.text[:80]}")
+
+    # Log the auto-generated API key (custom key requires admin config in APIM)
+    _log_api_key(session, api_id, sub_id)
+    log(f"  ✓ API_KEY plan subscription created for '{api_name}'")
+
+
+def _log_api_key(session: requests.Session, api_id: str, sub_id: str):
+    """Fetch and log the API key(s) for a subscription (uses v1 endpoint)."""
+    # v1 endpoint returns the API key list directly (not wrapped in {"data":[]})
+    keys_url = (
+        f"{APIM_BASE_URL}/management/organizations/{ORGANIZATION}"
+        f"/environments/{ENVIRONMENT}/apis/{api_id}/subscriptions/{sub_id}/apikeys"
+    )
+    keys_r = session.get(keys_url, timeout=10)
+    if keys_r.ok:
+        keys = keys_r.json()
+        if isinstance(keys, list):
+            for k in keys:
+                log(f"  ✓ Silver API key: {k.get('key', '?')}")
+        elif isinstance(keys, dict):
+            for k in keys.get("data", []):
+                log(f"  ✓ Silver API key: {k.get('key', '?')}")
+    else:
+        log(f"  WARNING: could not retrieve API keys: {keys_r.text[:80]}")
 
 
 def ensure_jwt_plan_subscription(session: requests.Session, api_id: str, api_name: str, app_id: str):
@@ -508,9 +627,9 @@ def ensure_jwt_plan_subscription(session: requests.Session, api_id: str, api_nam
         return
     sub_id = sub_r.json().get("id")
 
-    # Accept the subscription
+    # AUTO validation plans may self-accept; _accept returning 400 is non-fatal
     acc_r = session.post(f"{base}/subscriptions/{sub_id}/_accept", json={}, timeout=10)
-    if acc_r.ok:
+    if acc_r.ok or "cannot accept" in acc_r.text.lower():
         log(f"  ✓ JWT plan subscription created and accepted for '{api_name}'")
     else:
         log(f"  WARNING: could not accept subscription: {acc_r.text[:80]}")
@@ -550,6 +669,8 @@ def main():
         # subscribe it to the JWT plan so the gateway can resolve subscriptions.
         jwt_app_client_id = raw.get("_rnli_jwt_app_client_id")  # e.g. "rnli-lifeboat"
         jwt_app_name = raw.get("_rnli_jwt_app_name", "RNLI Lifeboat Website")
+        # Optional: create a Silver-tier APIM application with an API_KEY subscription.
+        apikey_app_name = raw.get("_rnli_apikey_app_name")  # e.g. "RNLI Silver Subscriber"
 
         # Strip any non-standard top-level keys before importing
         definition = {k: v for k, v in raw.items() if not k.startswith("_rnli_")}
@@ -563,6 +684,9 @@ def main():
                 app_id = ensure_apim_application(session, jwt_app_client_id, jwt_app_name)
                 if app_id:
                     ensure_jwt_plan_subscription(session, api_id, api_name, app_id)
+            # If an API key app name is specified, create the Silver subscriber app + subscription
+            if apikey_app_name:
+                ensure_apikey_subscription(session, api_id, api_name, apikey_app_name)
             success += 1
         else:
             failed += 1

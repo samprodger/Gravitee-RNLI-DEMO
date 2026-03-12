@@ -7,9 +7,12 @@ Access control enforced by Gravitee API Gateway:
   - Bronze plan (keyless / anonymous) → Gravitee injects X-RNLI-Plan: bronze
     Returns: id, name, station_type, region  (public summary)
 
+  - Silver plan (API key) → Gravitee injects X-RNLI-Plan: silver
+    Returns: all Bronze fields + country, lat, lon, address  (location data)
+
   - Gold plan (JWT via Gravitee AM) → Gravitee injects X-RNLI-Plan: gold
-    Returns: all Bronze fields + country, lat, lon, address,
-             crew_count, launches_per_year, recent_launch_date, recent_launch_outcome
+    Returns: all Silver fields + crew_count, launches_per_year,
+             recent_launch_date, recent_launch_outcome  (operational data)
 
 The response mimics the real Databricks SQL API format (JSON_ARRAY result set).
 """
@@ -169,6 +172,7 @@ STATIONS: list[dict] = [
 
 # Column definitions per tier
 BRONZE_COLUMNS = ["id", "name", "station_type", "region"]
+SILVER_COLUMNS = ["id", "name", "station_type", "region", "country", "lat", "lon", "address"]
 GOLD_COLUMNS = [
     "id", "name", "station_type", "region",
     "country", "lat", "lon", "address",
@@ -185,7 +189,12 @@ def build_sql_response(plan: str) -> dict:
     """
     Build a Databricks SQL API-compatible response for the given plan tier.
     """
-    columns = GOLD_COLUMNS if plan == "gold" else BRONZE_COLUMNS
+    if plan == "gold":
+        columns = GOLD_COLUMNS
+    elif plan == "silver":
+        columns = SILVER_COLUMNS
+    else:
+        columns = BRONZE_COLUMNS
 
     schema = {
         "column_count": len(columns),
@@ -222,7 +231,9 @@ def build_sql_response(plan: str) -> dict:
             "Full dataset: id, name, station_type, region, country, lat, lon, "
             "address, crew_count, launches_per_year, recent_launch_date, recent_launch_outcome"
             if plan == "gold"
-            else "Upgrade to Gold tier for coordinates, addresses, crew data and recent launch information"
+            else "Station locations included — upgrade to Gold for crew strength and launch history"
+            if plan == "silver"
+            else "Upgrade to Silver for station locations or Gold for full operational data"
         ),
     }
 
@@ -243,12 +254,13 @@ async def execute_statement(request: Request):
 
     Access tier controlled by Gravitee API Gateway:
     - X-RNLI-Plan: bronze  →  id, name, station_type, region
-    - X-RNLI-Plan: gold    →  + country, lat, lon, address, crew data, recent launch
+    - X-RNLI-Plan: silver  →  + country, lat, lon, address
+    - X-RNLI-Plan: gold    →  + crew_count, launches_per_year, recent launch data
 
     The gateway injects this header based on the API subscription plan.
     Without authentication → Bronze (keyless plan).
     With valid JWT (Gravitee AM) → Gold (JWT plan).
     """
     raw_plan = (request.headers.get("X-RNLI-Plan") or "bronze").lower().strip()
-    plan = raw_plan if raw_plan in ("bronze", "gold") else "bronze"
+    plan = raw_plan if raw_plan in ("bronze", "silver", "gold") else "bronze"
     return build_sql_response(plan)

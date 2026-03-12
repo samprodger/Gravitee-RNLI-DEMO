@@ -2,6 +2,7 @@
   "_rnli_multi_plans": true,
   "_rnli_jwt_app_client_id": "rnli-lifeboat",
   "_rnli_jwt_app_name": "RNLI Lifeboat Website",
+  "_rnli_apikey_app_name": "RNLI Silver Subscriber",
   "export": {
     "date": "2026-03-12T09:00:00.000000000Z",
     "apimVersion": "4.10.0"
@@ -151,8 +152,62 @@
     },
     {
       "definitionVersion": "V4",
+      "name": "Silver",
+      "description": "API key access — returns station summary plus location data (GPS coordinates, country and postal address). Requires an API key issued by the RNLI data portal.",
+      "security": {
+        "type": "API_KEY",
+        "configuration": {}
+      },
+      "mode": "STANDARD",
+      "status": "PUBLISHED",
+      "characteristics": [],
+      "commentRequired": false,
+      "excludedGroups": [],
+      "generalConditions": "",
+      "order": 2,
+      "tags": [],
+      "type": "API",
+      "validation": "AUTO",
+      "flows": [
+        {
+          "name": "Inject Silver Plan Header",
+          "enabled": true,
+          "selectors": [
+            {
+              "type": "HTTP",
+              "path": "/",
+              "pathOperator": "STARTS_WITH",
+              "methods": ["GET", "POST", "OPTIONS"]
+            }
+          ],
+          "request": [
+            {
+              "name": "Set Silver tier header",
+              "enabled": true,
+              "policy": "transform-headers",
+              "configuration": {
+                "addHeaders": [
+                  {
+                    "name": "X-RNLI-Plan",
+                    "value": "silver"
+                  }
+                ],
+                "removeHeaders": [],
+                "whitelistHeaders": []
+              }
+            }
+          ],
+          "response": [],
+          "publish": [],
+          "subscribe": [],
+          "tags": []
+        }
+      ]
+    },
+    {
+      "definitionVersion": "V4",
       "name": "Gold",
-      "description": "Authenticated access with JWT via Gravitee AM — returns full station data including GPS coordinates, postal address, crew strength, annual launch statistics, and recent lifeboat callout details.",
+      "description": "Authenticated access with JWT via Gravitee AM — returns full station data including GPS coordinates, postal address, crew strength, annual launch statistics and recent lifeboat callout details.",
       "security": {
         "type": "JWT",
         "configuration": {
@@ -174,7 +229,7 @@
       "commentRequired": false,
       "excludedGroups": [],
       "generalConditions": "",
-      "order": 2,
+      "order": 3,
       "tags": [],
       "type": "API",
       "validation": "AUTO",
