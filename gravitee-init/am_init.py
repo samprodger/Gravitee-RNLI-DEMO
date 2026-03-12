@@ -10,6 +10,7 @@ Sets up:
 """
 
 import glob
+import json
 import os
 import sys
 import time
@@ -337,6 +338,7 @@ class AMInitializer:
             "password": USER_PASSWORD,
             "forceResetPassword": False,
             "preRegistration": False,
+            "additionalInformation": {"plan": "gold"},
         }
         try:
             r = self.session.post(url, json=payload, timeout=10)
@@ -362,6 +364,7 @@ class AMInitializer:
             "password": SILVER_USER_PASSWORD,
             "forceResetPassword": False,
             "preRegistration": False,
+            "additionalInformation": {"plan": "silver"},
         }
         try:
             r = self.session.post(url, json=payload, timeout=10)
@@ -374,6 +377,97 @@ class AMInitializer:
             return True
         except requests.exceptions.RequestException as e:
             log(f"WARNING: Failed to create silver user (non-fatal): {e}")
+            return True  # non-fatal
+
+    def set_user_plans(self) -> bool:
+        """Idempotent: patch existing users to ensure their plan is set in additionalInformation."""
+        log("Setting plan attributes on demo users...")
+        base = f"{AM_BASE_URL}/management/organizations/{ORGANIZATION}/environments/{ENVIRONMENT}/domains/{self.domain_id}"
+        try:
+            r = self.session.get(f"{base}/users?page=0&size=50", timeout=10)
+            r.raise_for_status()
+            users = r.json().get("data", []) if isinstance(r.json(), dict) else r.json()
+            plan_map = {
+                USER_USERNAME:        "gold",
+                USER_EMAIL:           "gold",
+                SILVER_USER_USERNAME: "silver",
+                SILVER_USER_EMAIL:    "silver",
+            }
+            for user in users:
+                uname = user.get("username", "")
+                target_plan = plan_map.get(uname)
+                if not target_plan:
+                    continue
+                current_plan = (user.get("additionalInformation") or {}).get("plan")
+                if current_plan == target_plan:
+                    log(f"  ✓ {uname} already has plan={target_plan}")
+                    continue
+                uid = user.get("id")
+                resp = self.session.put(
+                    f"{base}/users/{uid}",
+                    json={
+                        "firstName": user.get("firstName", ""),
+                        "lastName":  user.get("lastName", ""),
+                        "email":     user.get("email", ""),
+                        "additionalInformation": {"plan": target_plan},
+                    },
+                    timeout=10,
+                )
+                if resp.ok:
+                    log(f"  ✓ Set plan={target_plan} for {uname}")
+                else:
+                    log(f"  WARNING: Could not set plan for {uname}: {resp.text[:100]}")
+            return True
+        except requests.exceptions.RequestException as e:
+            log(f"WARNING: Failed to set user plans (non-fatal): {e}")
+            return True  # non-fatal
+
+    def configure_token_plan_flow(self) -> bool:
+        """Add plan claim enrichment to the AM TOKEN flow so it appears in tokens/userinfo."""
+        log("Configuring TOKEN flow to inject plan claim...")
+        base = f"{AM_BASE_URL}/management/organizations/{ORGANIZATION}/environments/{ENVIRONMENT}/domains/{self.domain_id}"
+        try:
+            r = self.session.get(f"{base}/flows", timeout=10)
+            r.raise_for_status()
+            flows = r.json()
+
+            plan_step = {
+                "policy": "policy-am-enrich-auth-flow",
+                "name": "Inject plan claim",
+                "description": "Add plan from user additionalInformation to token",
+                "enabled": True,
+                "configuration": json.dumps({
+                    "properties": [
+                        {"key": "plan", "value": "{#profile['additionalInformation']['plan'] ?: 'silver'}"}
+                    ],
+                    "idempotent": False,
+                }),
+            }
+
+            updated = []
+            already_set = False
+            for f in flows:
+                clean = {k: v for k, v in f.items() if k != "icon"}
+                if clean.get("type") == "token":
+                    existing_pre = clean.get("pre", [])
+                    if any(s.get("name") == "Inject plan claim" for s in existing_pre):
+                        log("  ✓ TOKEN flow plan enrichment already configured.")
+                        already_set = True
+                    else:
+                        clean["pre"] = [plan_step] + existing_pre
+                updated.append(clean)
+
+            if already_set:
+                return True
+
+            r2 = self.session.put(f"{base}/flows", json=updated, timeout=10)
+            if r2.ok:
+                log("  ✓ TOKEN flow updated with plan claim enrichment.")
+            else:
+                log(f"  WARNING: TOKEN flow update failed: {r2.text[:100]}")
+            return True
+        except requests.exceptions.RequestException as e:
+            log(f"WARNING: Failed to configure TOKEN flow (non-fatal): {e}")
             return True  # non-fatal
 
     # -----------------------------------------------------------------------
@@ -682,6 +776,8 @@ class AMInitializer:
             return False
 
         self.create_silver_user()
+        self.set_user_plans()
+        self.configure_token_plan_flow()
         self.configure_login_form()
 
         mcp_configs = self.load_mcp_server_configs()

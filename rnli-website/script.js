@@ -328,7 +328,7 @@ async function callAgent(userMessage) {
         const context = {
             name: `${authConfig.userInfo.given_name || ''} ${authConfig.userInfo.family_name || ''}`.trim() || 'Member',
             email: authConfig.userInfo.email || '',
-            plan: 'gold',  // Joe Doe is a Gold member
+            plan: getUserPlan() || 'silver',
             visits: visits,
         };
         enrichedMessage = `[USER_CONTEXT:${JSON.stringify(context)}]\n${userMessage}`;
@@ -729,6 +729,7 @@ async function handleOAuthCallback() {
                 email: ui.preferred_username || ui.email,
                 given_name: ui.given_name || '',
                 family_name: ui.family_name || '',
+                plan: ui.plan || null,
             };
         }
 
@@ -814,6 +815,21 @@ function toggleUserDropdown() {
 // Update UI for logged-in / logged-out state
 // ---------------------------------------------------------------------------
 
+/**
+ * Determine the current user's tier.
+ * Reads `plan` from the userInfo response (set as an AM additionalInformation claim).
+ * Falls back to email lookup for demo robustness.
+ */
+function getUserPlan() {
+    if (!authConfig.userInfo) return null;
+    if (authConfig.userInfo.plan) return authConfig.userInfo.plan;
+    // Fallback: derive from known demo accounts
+    const email = authConfig.userInfo.email || '';
+    if (email === 'joe.doe@gravitee.io') return 'gold';
+    if (email === 'silver.user@rnli.org') return 'silver';
+    return 'silver'; // default for authenticated users
+}
+
 function updateUserDisplay() {
     if (authConfig.userInfo && authConfig.accessToken) {
         authEls.signInBtn?.classList.add('hidden');
@@ -823,14 +839,30 @@ function updateUserDisplay() {
         const lastInitial = authConfig.userInfo.family_name
             ? authConfig.userInfo.family_name.charAt(0).toUpperCase() + '.'
             : '';
+        const plan = getUserPlan();
+        const isGold = plan === 'gold';
+
         if (authEls.userDisplayName) {
-            authEls.userDisplayName.innerHTML = `${first} ${lastInitial} <span class="gold-badge-nav">⭐ Gold</span>`.trim();
+            const badgeHtml = isGold
+                ? `<span class="gold-badge-nav">⭐ Gold</span>`
+                : `<span class="silver-badge-nav">🥈 Silver</span>`;
+            authEls.userDisplayName.innerHTML = `${first} ${lastInitial} ${badgeHtml}`.trim();
         }
         if (authEls.userDropdownName) authEls.userDropdownName.textContent = `${first} ${authConfig.userInfo.family_name || ''}`.trim();
         if (authEls.userDropdownEmail) authEls.userDropdownEmail.textContent = authConfig.userInfo.email || '';
 
-        // Show Gold badge in dropdown
-        if (authEls.goldBadge) authEls.goldBadge.classList.remove('hidden');
+        // Show tier badge in dropdown
+        if (authEls.goldBadge) {
+            if (isGold) {
+                authEls.goldBadge.classList.remove('hidden');
+                authEls.goldBadge.className = 'gold-member-badge';
+                authEls.goldBadge.textContent = '⭐ Gold Member — Exclusive access enabled';
+            } else {
+                authEls.goldBadge.classList.remove('hidden');
+                authEls.goldBadge.className = 'silver-member-badge';
+                authEls.goldBadge.textContent = '🥈 Silver Member';
+            }
+        }
 
         // Show visited section
         authEls.visitedSection?.classList.remove('hidden');
@@ -858,27 +890,53 @@ function personalizeChatWelcome(firstName) {
     if (!welcomeDiv) return;
     const content = welcomeDiv.querySelector('.message-content');
     if (!content) return;
-    content.innerHTML = `
-        <p>Welcome back, <strong>${firstName}</strong>! 🌊</p>
-        <p>As a <span class="gold-inline-badge">⭐ Gold Member</span> you have exclusive access to:</p>
-        <ul>
-            <li>Your personal station visit history</li>
-            <li>Recent lifeboat launch data for every station</li>
-            <li>Postal addresses &amp; walking directions</li>
-        </ul>
-        <p>What would you like to know today?</p>
-    `;
+    const plan = getUserPlan();
+    const isGold = plan === 'gold';
+    if (isGold) {
+        content.innerHTML = `
+            <p>Welcome back, <strong>${firstName}</strong>! 🌊</p>
+            <p>As a <span class="gold-inline-badge">⭐ Gold Member</span> you have exclusive access to:</p>
+            <ul>
+                <li>Your personal station visit history</li>
+                <li>Recent lifeboat launch data for every station</li>
+                <li>Postal addresses &amp; walking directions</li>
+            </ul>
+            <p>What would you like to know today?</p>
+        `;
+    } else {
+        content.innerHTML = `
+            <p>Welcome back, <strong>${firstName}</strong>! 🌊</p>
+            <p>As a <span class="silver-inline-badge">🥈 Silver Member</span> you have access to:</p>
+            <ul>
+                <li>Full station details including location &amp; coordinates</li>
+                <li>Postal addresses &amp; walking directions</li>
+                <li>Station types, regions &amp; contact info</li>
+            </ul>
+            <p>What would you like to know today?</p>
+        `;
+    }
 }
 
 function updateQuickRepliesForUser() {
     if (!els.quickReplies) return;
     if (authConfig.userInfo && authConfig.accessToken) {
-        els.quickReplies.innerHTML = `
-            <button class="quick-reply-btn gold-reply" onclick="sendFromQuickReply('When did I visit Poole lifeboat station?')">🗓 My Poole visit</button>
-            <button class="quick-reply-btn gold-reply" onclick="sendFromQuickReply('What was my most recent lifeboat station visit?')">📍 Last visit</button>
-            <button class="quick-reply-btn" onclick="sendFromQuickReply('Find nearest stations to Poole')">Near Poole</button>
-            <button class="quick-reply-btn" onclick="sendFromQuickReply('Tell me about Tower lifeboat station')">Tower Station</button>
-        `;
+        const plan = getUserPlan();
+        const isGold = plan === 'gold';
+        if (isGold) {
+            els.quickReplies.innerHTML = `
+                <button class="quick-reply-btn gold-reply" onclick="sendFromQuickReply('When did I visit Poole lifeboat station?')">🗓 My Poole visit</button>
+                <button class="quick-reply-btn gold-reply" onclick="sendFromQuickReply('What was my most recent lifeboat station visit?')">📍 Last visit</button>
+                <button class="quick-reply-btn" onclick="sendFromQuickReply('Find nearest stations to Poole')">Near Poole</button>
+                <button class="quick-reply-btn" onclick="sendFromQuickReply('Tell me about Tower lifeboat station')">Tower Station</button>
+            `;
+        } else {
+            els.quickReplies.innerHTML = `
+                <button class="quick-reply-btn silver-reply" onclick="sendFromQuickReply('Find nearest stations to Edinburgh')">📍 Near Edinburgh</button>
+                <button class="quick-reply-btn silver-reply" onclick="sendFromQuickReply('Give me the address for Poole lifeboat station')">🏠 Poole address</button>
+                <button class="quick-reply-btn" onclick="sendFromQuickReply('Stations in Scotland')">Scotland</button>
+                <button class="quick-reply-btn" onclick="sendFromQuickReply('Tell me about Tower lifeboat station')">Tower Station</button>
+            `;
+        }
     } else {
         els.quickReplies.innerHTML = `
             <button class="quick-reply-btn" onclick="sendFromQuickReply('Nearest stations to Brighton')">Near Brighton</button>
@@ -937,8 +995,13 @@ async function fetchVisitedStations() {
 function renderVisitedStations(data) {
     if (!authEls.visitedList) return;
     const visits = data.visits || [];
+    const plan = getUserPlan();
+    const isGold = plan === 'gold';
 
     if (authEls.visitedSubtitle) {
+        const planBadge = isGold
+            ? `<span class="gold-plan-badge">⭐ Gold Plan</span>`
+            : `<span class="silver-plan-badge">🥈 Silver Plan</span>`;
         authEls.visitedSubtitle.innerHTML =
             `Stations visited by <strong>${data.displayName || data.user || 'you'}</strong>
              &nbsp;·&nbsp;
@@ -947,7 +1010,7 @@ function renderVisitedStations(data) {
                  Secured by Gravitee AM
              </span>
              &nbsp;·&nbsp;
-             <span class="gold-plan-badge">⭐ Gold Plan</span>`;
+             ${planBadge}`;
     }
 
     if (visits.length === 0) {
@@ -996,7 +1059,7 @@ function renderVisitedStations(data) {
                 🗺️ Get walking directions
             </a>` : ''}
             ${v.notes ? `<div class="visited-card-notes">${v.notes}</div>` : ''}
-            ${launch ? `<div class="visited-card-launch">
+            ${(launch && isGold) ? `<div class="visited-card-launch">
                 <div class="launch-header">🚤 Latest Launch <span class="gold-exclusive-tag">Gold Exclusive</span></div>
                 <div class="launch-date">${launch.date} · ${launch.lifeboat || ''}</div>
                 <div class="launch-desc">${launch.description}</div>
