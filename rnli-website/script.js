@@ -242,6 +242,9 @@ async function initAgent() {
         setInputEnabled(true);
         contextId = generateId();
         console.log('[RNLI Agent] Connected. Endpoint:', config.agentUrl);
+        // Trigger warm-up now that the agent is connected — catches the case where
+        // checkStoredAuth() ran before initAgent() finished (i.e. page reload with stored token)
+        warmUpAI();
     } catch (err) {
         console.error('[RNLI Agent] Connection failed:', err);
         config.isConnected = false;

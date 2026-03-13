@@ -718,6 +718,7 @@ main {
 .flow-status-warn    { background: var(--warn); }
 .flow-status-err     { background: var(--err); }
 .flow-status-blocked { background: var(--rnli-red); }
+.flow-status-cached  { background: #1D4ED8; }
 
 .flow-user-text {
   font-size: 12px;
