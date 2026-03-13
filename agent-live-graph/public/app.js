@@ -1035,8 +1035,8 @@
     {
       type: 'arrow', from: 'gateway', to: 'agent',
       label: '400 — Content blocked',
-      message: { lane: 'agent', text: 'Guard Rails: content policy violation — request denied' },
-      badge: { type: 'blocked', text: '400 Blocked' },
+      message: { lane: 'agent', text: 'Guard Rails: toxicity score 0.87 > threshold 0.50 — denied' },
+      badge: { type: 'blocked', text: '0.87 toxicity · BLOCKED' },
     },
 
     /* ── Phase 3 — Error Returned to Client ── */
@@ -1133,10 +1133,75 @@
 
   function getTotalDemoSteps() { return getActiveScenario().length; }
 
+  function showCompletionBanner() {
+    const val = scenarioSelect ? scenarioSelect.value : 'happy';
+    const configs = {
+      happy: {
+        icon: '✅', title: 'Request complete',
+        rows: [
+          { icon: '🛡️', text: 'Guard Rails checked ×2 — no harmful content detected' },
+          { icon: '⚡', text: 'Gateway overhead: ~7ms per hop' },
+          { icon: '📦', text: 'Cache miss on first query — response now stored (5 min TTL)' },
+          { icon: '🔑', text: 'JWT validated · Gold plan · rate limit not reached' },
+        ],
+        footer: '1.9s total  ·  Gold plan  ·  2 LLM calls  ·  1 MCP tool call',
+        cls: 'cb-ok',
+      },
+      guardrails: {
+        icon: '🛡️', title: 'Request blocked by Guard Rails',
+        rows: [
+          { icon: '🤖', text: 'DistilBERT ONNX model scored content 0.87 (threshold: 0.50)' },
+          { icon: '🚫', text: 'LLM never reached — blocked at gateway in < 5ms' },
+          { icon: '📋', text: 'Policy decision logged in Gravitee Analytics' },
+        ],
+        footer: '< 50ms total  ·  Silver plan  ·  0 LLM calls  ·  0 tokens consumed',
+        cls: 'cb-blocked',
+      },
+      cache: {
+        icon: '⚡', title: 'Cache hit — LLM skipped entirely',
+        rows: [
+          { icon: '📦', text: 'Identical prompt found in response cache (TTL: 5 min)' },
+          { icon: '🚀', text: '180ms vs 1,200ms — 6× faster, zero LLM cost' },
+          { icon: '🔑', text: 'Guard Rails still evaluated — cache never bypasses security' },
+        ],
+        footer: '190ms total  ·  Gold plan  ·  0 LLM calls  ·  0 tokens consumed',
+        cls: 'cb-cached',
+      },
+      ratelimit: {
+        icon: '🚫', title: 'Rate limit exceeded',
+        rows: [
+          { icon: '📊', text: 'Silver plan quota: 5 requests / minute reached' },
+          { icon: '⚡', text: 'Blocked at gateway in < 10ms — agent never contacted' },
+          { icon: '💡', text: 'Gold plan offers higher rate limits and response cache access' },
+        ],
+        footer: '< 10ms total  ·  Silver plan  ·  429 Too Many Requests',
+        cls: 'cb-blocked',
+      },
+    };
+    const cfg = configs[val] || configs.happy;
+
+    const banner = document.createElement('div');
+    banner.className = `completion-banner ${cfg.cls}`;
+    banner.innerHTML = `
+      <div class="cb-header">
+        <span class="cb-icon">${cfg.icon}</span>
+        <span class="cb-title">${cfg.title}</span>
+        <span class="cb-subtitle">What Gravitee did</span>
+      </div>
+      <div class="cb-rows">
+        ${cfg.rows.map(r => `<div class="cb-row"><span class="cb-row-icon">${r.icon}</span><span>${r.text}</span></div>`).join('')}
+      </div>
+      <div class="cb-footer">${cfg.footer}</div>`;
+
+    stepsEl.appendChild(banner);
+    requestAnimationFrame(() => requestAnimationFrame(() => banner.classList.add('visible')));
+    scrollToBottom();
+  }
+
   function demoShowNext() {
     const scenario = getActiveScenario();
     const total    = getTotalDemoSteps();
-    if (demoCursor >= total) { demoStop(); return; }
+    if (demoCursor >= total) { demoStop(); showCompletionBanner(); return; }
 
     // Create flow wrapper before the first step
     if (demoCursor === 0 && !currentFlowBody) {
