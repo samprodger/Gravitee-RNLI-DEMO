@@ -10,3 +10,5 @@ dist/
 build/
 .pytest_cache/
 lifeboat-api/data/stations_raw.geojson
+# ML models — too large for GitHub (use LFS or provide separately)
+*.onnx
