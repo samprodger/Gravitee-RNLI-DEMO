@@ -192,6 +192,26 @@ header {
 
 .step-counter span { color: rgba(255,255,255,0.85); font-weight: 600; }
 
+.console-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.55);
+  text-decoration: none;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 5px;
+  padding: 3px 9px;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  letter-spacing: 0.02em;
+}
+.console-link:hover {
+  color: var(--rnli-orange);
+  border-color: var(--rnli-orange);
+  background: rgba(242,136,0,0.08);
+}
+
 /* ── Main ──────────────────────────────────────────────────── */
 main {
   display: flex;
