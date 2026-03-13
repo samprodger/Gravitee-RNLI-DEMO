@@ -657,6 +657,7 @@ const authEls = {
     oidcUrl:          document.getElementById('oidcUrl'),
     clientId:         document.getElementById('clientId'),
     goldBadge:        document.getElementById('goldBadge'),
+    chatPlanBadge:    document.getElementById('chatPlanBadge'),
 };
 
 // ---------------------------------------------------------------------------
@@ -980,12 +981,25 @@ function updateUserDisplay() {
         // Update quick replies for Gold members
         updateQuickRepliesForUser();
 
+        // Show plan badge in chat header
+        if (authEls.chatPlanBadge) {
+            authEls.chatPlanBadge.classList.remove('hidden');
+            if (isGold) {
+                authEls.chatPlanBadge.className = 'chat-plan-badge chat-plan-gold';
+                authEls.chatPlanBadge.textContent = '⭐ Gold';
+            } else {
+                authEls.chatPlanBadge.className = 'chat-plan-badge chat-plan-silver';
+                authEls.chatPlanBadge.textContent = '🥈 Silver';
+            }
+        }
+
     } else {
         authEls.signInBtn?.classList.remove('hidden');
         authEls.userMenu?.classList.add('hidden');
         authEls.userDropdown?.classList.add('hidden');
         authEls.visitedSection?.classList.add('hidden');
         if (authEls.goldBadge) authEls.goldBadge?.classList.add('hidden');
+        if (authEls.chatPlanBadge) authEls.chatPlanBadge.classList.add('hidden');
     }
 }
 

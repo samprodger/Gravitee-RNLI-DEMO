@@ -646,7 +646,37 @@ body::before {
 }
 .chat-bot-avatar svg { stroke: var(--rnli-navy); }
 
-.chat-header-info h3 { font-size: 15px; font-weight: 700; margin: 0; }
+.chat-title-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.chat-title-row h3 { font-size: 15px; font-weight: 700; margin: 0; }
+
+.chat-plan-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+}
+
+.chat-plan-badge.hidden { display: none; }
+
+.chat-plan-gold {
+  background: var(--rnli-gold-light);
+  color: #7a5000;
+  border: 1px solid var(--rnli-gold-border);
+}
+
+.chat-plan-silver {
+  background: #f0f4ff;
+  color: #3a5a9a;
+  border: 1px solid #c5d3f0;
+}
 
 .chat-status {
   font-size: 12px;
