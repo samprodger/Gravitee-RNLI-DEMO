@@ -11,11 +11,11 @@
   --rnli-orange:    #f28800;
   --rnli-red:       #dd2330;
 
-  --bg:             #F7F8FA;
-  --bg-surface:     #FFFFFF;
-  --border:         rgba(0,0,0,0.07);
-  --border-mid:     rgba(0,0,0,0.12);
-  --border-strong:  rgba(0,0,0,0.18);
+  --bg:             #D8DCE5;
+  --bg-surface:     #E8EBF1;
+  --border:         rgba(0,0,0,0.10);
+  --border-mid:     rgba(0,0,0,0.16);
+  --border-strong:  rgba(0,0,0,0.24);
 
   --text:           #1E293B;
   --text-2:         #475569;
