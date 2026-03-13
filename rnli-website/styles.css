@@ -1902,3 +1902,87 @@ body::before {
   color: var(--rnli-orange);
   background: rgba(242, 136, 0, 0.1);
 }
+
+/* ── Plan lock banner (Silver plan — Gold-exclusive sections) */
+.plan-lock-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 18px;
+    background: linear-gradient(135deg, #fafafa 0%, #f0f3f8 100%);
+    border: 1.5px dashed #c0ccd8;
+    border-radius: 14px;
+    padding: 28px 28px 28px 24px;
+    margin: 0 auto;
+    max-width: 520px;
+    width: 100%;
+}
+.plan-lock-icon {
+    font-size: 28px;
+    line-height: 1;
+    flex-shrink: 0;
+    padding-top: 2px;
+}
+.plan-lock-content { display: flex; flex-direction: column; gap: 8px; }
+.plan-lock-content h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: #1e293b;
+}
+.plan-lock-content p {
+    margin: 0;
+    font-size: 13px;
+    color: #64748b;
+    line-height: 1.55;
+}
+.plan-lock-features {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 4px;
+}
+.plan-lock-feature {
+    font-size: 12px;
+    color: #475569;
+    font-weight: 500;
+}
+.plan-lock-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    padding: 8px 16px;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    border: none;
+    transition: opacity 0.15s;
+    align-self: flex-start;
+}
+.plan-lock-cta:hover { opacity: 0.88; }
+
+/* Plan lock modal used when Silver user tries Gold actions */
+.plan-lock-modal-content {
+    background: white;
+    border-radius: 14px;
+    padding: 28px;
+    max-width: 420px;
+    width: 100%;
+    text-align: center;
+}
+.plan-lock-modal-icon { font-size: 40px; margin-bottom: 12px; }
+.plan-lock-modal-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0 0 8px;
+}
+.plan-lock-modal-body {
+    font-size: 13px;
+    color: #64748b;
+    line-height: 1.55;
+    margin: 0 0 20px;
+}

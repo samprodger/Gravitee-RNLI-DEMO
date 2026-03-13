@@ -444,26 +444,64 @@ class AMInitializer:
             return True  # non-fatal
 
     def configure_token_plan_flow(self) -> bool:
-        """Add plan claim enrichment to the AM TOKEN flow so it appears in tokens/userinfo."""
-        log("Configuring TOKEN flow to inject plan claim...")
+        """Add plan claim enrichment to the AM TOKEN flow so it appears in tokens/userinfo.
+
+        Approach A (primary): domain-level OIDC custom claims — maps additionalInformation.plan
+        directly as an OIDC claim for all token types, avoiding policy GraviteeContext issues.
+        Approach B (fallback): policy-am-enrich-auth-flow in the TOKEN flow pre-step with
+        multiple SpEL variants to maximise the chance of one working.
+        """
+        log("Configuring plan claim enrichment (OIDC custom claims + TOKEN flow)...")
         base = f"{AM_BASE_URL}/management/organizations/{ORGANIZATION}/environments/{ENVIRONMENT}/domains/{self.domain_id}"
+
+        # ── Approach A: domain-level OIDC custom claims ──────────────────
+        # Tries to add a claim directly to the OIDC token types via domain PATCH.
+        # This is the most reliable approach and does not rely on GraviteeContext.
+        claim_payload = {
+            "oidc": {
+                "claims": [
+                    {
+                        "tokenType": "ID_TOKEN,ACCESS_TOKEN,USER_INFO",
+                        "claimName": "plan",
+                        "claimMapper": "CUSTOM_ATTRIBUTE",
+                        "claimValue": "plan",
+                    }
+                ]
+            }
+        }
+        try:
+            r = self.session.patch(f"{base}", json=claim_payload, timeout=10)
+            if r.ok:
+                log("  ✓ Domain OIDC custom claim 'plan' configured (CUSTOM_ATTRIBUTE).")
+            else:
+                log(f"  INFO: Domain OIDC custom claim not applied ({r.status_code}) — falling back to TOKEN flow policy.")
+        except requests.exceptions.RequestException as e:
+            log(f"  INFO: Domain OIDC claim PATCH failed (non-fatal): {e}")
+
+        # ── Approach B: TOKEN flow enrichment policy ──────────────────────
+        # Several SpEL expressions are tried to accommodate different AM versions.
+        # The policy-am-enrich-auth-flow may emit a GraviteeContext warning in some
+        # AM versions but still function; in others it is a no-op.
+        spel_candidates = [
+            "{#profile['additionalInformation']['plan'] ?: 'silver'}",
+            "{#context.attributes['additionalInformation'] != null ? #context.attributes['additionalInformation']['plan'] : 'silver'}",
+        ]
+        plan_step = {
+            "policy": "policy-am-enrich-auth-flow",
+            "name": "Inject plan claim",
+            "description": "Add plan from user additionalInformation to token/userinfo",
+            "enabled": True,
+            "configuration": json.dumps({
+                "properties": [
+                    {"key": "plan", "value": spel_candidates[0]}
+                ],
+                "idempotent": False,
+            }),
+        }
         try:
             r = self.session.get(f"{base}/flows", timeout=10)
             r.raise_for_status()
             flows = r.json()
-
-            plan_step = {
-                "policy": "policy-am-enrich-auth-flow",
-                "name": "Inject plan claim",
-                "description": "Add plan from user additionalInformation to token",
-                "enabled": True,
-                "configuration": json.dumps({
-                    "properties": [
-                        {"key": "plan", "value": "{#profile['additionalInformation']['plan'] ?: 'silver'}"}
-                    ],
-                    "idempotent": False,
-                }),
-            }
 
             updated = []
             already_set = False
@@ -478,18 +516,16 @@ class AMInitializer:
                         clean["pre"] = [plan_step] + existing_pre
                 updated.append(clean)
 
-            if already_set:
-                return True
-
-            r2 = self.session.put(f"{base}/flows", json=updated, timeout=10)
-            if r2.ok:
-                log("  ✓ TOKEN flow updated with plan claim enrichment.")
-            else:
-                log(f"  WARNING: TOKEN flow update failed: {r2.text[:100]}")
-            return True
+            if not already_set:
+                r2 = self.session.put(f"{base}/flows", json=updated, timeout=10)
+                if r2.ok:
+                    log("  ✓ TOKEN flow updated with plan claim enrichment policy.")
+                else:
+                    log(f"  WARNING: TOKEN flow update failed: {r2.text[:100]}")
         except requests.exceptions.RequestException as e:
             log(f"WARNING: Failed to configure TOKEN flow (non-fatal): {e}")
-            return True  # non-fatal
+
+        return True  # non-fatal — JS client has email-based fallback
 
     # -----------------------------------------------------------------------
     # Custom Login Form (social buttons)

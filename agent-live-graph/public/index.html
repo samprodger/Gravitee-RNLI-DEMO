@@ -44,6 +44,10 @@
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><polygon points="1,0 9,5 1,10" fill="currentColor"/></svg>
         Demo
       </button>
+      <button class="mode-btn" data-mode="analytics">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="9" x2="1" y2="5"/><line x1="4" y1="9" x2="4" y2="2"/><line x1="7" y1="9" x2="7" y2="6"/></svg>
+        Analytics
+      </button>
     </div>
 
     <div class="scenario-picker" id="scenarioPicker" style="display:none">
@@ -75,7 +79,7 @@
   <main>
 
     <!-- Lane headers -->
-    <div class="lane-headers">
+    <div class="lane-headers" id="laneHeaders">
       <div class="lane-header" data-lane="client">
         <div class="lane-icon icon-client">
           <i class="ph ph-app-window" style="font-size:24px"></i>
@@ -115,6 +119,63 @@
     <!-- Graph area (no .lane-lines div — lanes are CSS background on .steps) -->
     <div class="graph-area" id="graphArea">
       <div class="steps" id="stepsContainer"></div>
+    </div>
+
+    <!-- Analytics panel (shown when mode === 'analytics') -->
+    <div class="analytics-panel" id="analyticsPanel" style="display:none">
+      <div class="analytics-header">
+        <div class="analytics-header-left">
+          <h2 class="analytics-title">Live Gateway Analytics</h2>
+          <span class="analytics-period">Accumulated since session start · updates in real time</span>
+        </div>
+        <button id="btnResetAnalytics" class="ctrl-btn" title="Reset stats">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 2v5h5M14 14V9H9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.5 6.5A6 6 0 0 0 3 3.5L2 7m12 3l-1 3.5a6 6 0 0 1-10.5-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Reset
+        </button>
+      </div>
+
+      <div class="analytics-grid">
+        <div class="analytics-card">
+          <div class="analytics-value" id="analyticsTotal">0</div>
+          <div class="analytics-label">Total Requests</div>
+        </div>
+        <div class="analytics-card analytics-card-gold">
+          <div class="analytics-value" id="analyticsGold">0</div>
+          <div class="analytics-label">Gold Plan</div>
+        </div>
+        <div class="analytics-card analytics-card-silver">
+          <div class="analytics-value" id="analyticsSilver">0</div>
+          <div class="analytics-label">Silver Plan</div>
+        </div>
+        <div class="analytics-card analytics-card-blocked">
+          <div class="analytics-value" id="analyticsBlocked">0</div>
+          <div class="analytics-label">Guard Rails Blocks</div>
+          <div class="analytics-pct" id="analyticsBlockPct">—</div>
+        </div>
+        <div class="analytics-card analytics-card-cached">
+          <div class="analytics-value" id="analyticsCached">0</div>
+          <div class="analytics-label">Cache Hits</div>
+          <div class="analytics-pct" id="analyticsCachePct">—</div>
+        </div>
+        <div class="analytics-card analytics-card-time">
+          <div class="analytics-value" id="analyticsAvgTime">—</div>
+          <div class="analytics-label">Avg Response Time</div>
+        </div>
+        <div class="analytics-card analytics-card-err">
+          <div class="analytics-value" id="analyticsRateLim">0</div>
+          <div class="analytics-label">Rate Limited / Errors</div>
+        </div>
+      </div>
+
+      <div class="analytics-recent">
+        <div class="analytics-recent-header">
+          <h3>Recent Requests</h3>
+          <span class="analytics-recent-hint">Last 20 requests</span>
+        </div>
+        <div class="analytics-timeline" id="analyticsTimeline">
+          <div class="atl-empty">No requests yet — send a query through the Gravitee Gateway.</div>
+        </div>
+      </div>
     </div>
   </main>
 

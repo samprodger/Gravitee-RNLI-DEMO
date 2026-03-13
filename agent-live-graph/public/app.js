@@ -35,6 +35,7 @@
   /* ── DOM refs ───────────────────────────────────────────── */
   const stepsEl      = document.getElementById('stepsContainer');
   const graphArea    = document.getElementById('graphArea');
+  const laneHeaders  = document.getElementById('laneHeaders');
   const modeToggle   = document.getElementById('modeToggle');
   const wsIndicator  = document.getElementById('wsIndicator');
   const liveStats    = document.getElementById('liveStats');
@@ -42,6 +43,7 @@
   const stepCounter  = document.getElementById('stepCounter');
   const stepNumEl    = document.getElementById('stepNum');
   const stepTotalEl  = document.getElementById('stepTotal');
+  const analyticsPanel   = document.getElementById('analyticsPanel');
   const progressEl   = document.getElementById('progressFill');
   const livePulse    = document.getElementById('livePulse');
   const liveLabel    = document.querySelector('.live-label');
@@ -73,6 +75,14 @@
   let demoTimer    = null;
   let currentGroup    = null;  // tracks current <details> group body for arrows
   let currentFlowBody = null;  // tracks current flow wrapper body
+
+  /* ── Analytics state (accumulated from live WS events) ─── */
+  const analyticsStats = {
+    total: 0, gold: 0, silver: 0, unknown: 0,
+    blocked: 0, cached: 0, rateLimited: 0,
+    responseTimes: [],   // rolling last-100 response times (ms)
+  };
+  const analyticsTimeline = [];  // max 20 recent requests
 
   /* ════════════════════════════════════════════════════════════
    * SHARED RENDERING ENGINE
@@ -680,6 +690,9 @@
     const steps = msg.steps || [];
     const summary = extractFlowSummary(steps);
 
+    // Always accumulate analytics regardless of current mode
+    updateAnalyticsFromFlow(msg, steps, summary);
+
     liveQueue.push({ type: 'flow-start', summary });
     liveQueue.push(...steps);
     liveQueue.push({ type: 'flow-end' });
@@ -745,6 +758,118 @@
   }
 
   /* ════════════════════════════════════════════════════════════
+   * ANALYTICS — accumulate stats from live WS events
+   * ════════════════════════════════════════════════════════════ */
+
+  function updateAnalyticsFromFlow(msg, steps, summary) {
+    analyticsStats.total++;
+
+    // Plan — first arrow with a plan field wins
+    let plan = 'unknown';
+    for (const step of steps) {
+      if (step.plan) { plan = step.plan.toLowerCase(); break; }
+    }
+    if (plan === 'gold')        analyticsStats.gold++;
+    else if (plan === 'silver') analyticsStats.silver++;
+    else                        analyticsStats.unknown++;
+
+    // Status from summary
+    if (summary.status === 'blocked')     analyticsStats.blocked++;
+    else if (summary.status === 'cached') analyticsStats.cached++;
+    else if (summary.status === 'err')    analyticsStats.rateLimited++;
+
+    // Response time — parse "1.9s" or "310ms" from totalTime
+    const t = summary.totalTime || '';
+    const mMatch = t.match(/([\d.]+)ms/);
+    const sMatch = t.match(/([\d.]+)s\b/);
+    let ms = null;
+    if (mMatch)      ms = parseFloat(mMatch[1]);
+    else if (sMatch) ms = parseFloat(sMatch[1]) * 1000;
+    if (ms !== null) {
+      analyticsStats.responseTimes.push(ms);
+      if (analyticsStats.responseTimes.length > 100) analyticsStats.responseTimes.shift();
+    }
+
+    // Timeline entry (most recent first, max 20)
+    analyticsTimeline.unshift({
+      time: msg.timestamp ? new Date(msg.timestamp) : new Date(),
+      query: summary.userText || (msg.apiName || ''),
+      plan,
+      status: summary.status || 'ok',
+      totalTime: summary.totalTime || '',
+    });
+    if (analyticsTimeline.length > 20) analyticsTimeline.pop();
+
+    if (mode === 'analytics') renderAnalytics();
+  }
+
+  function resetAnalytics() {
+    Object.assign(analyticsStats, { total: 0, gold: 0, silver: 0, unknown: 0, blocked: 0, cached: 0, rateLimited: 0, responseTimes: [] });
+    analyticsTimeline.length = 0;
+    renderAnalytics();
+  }
+
+  function renderAnalytics() {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+    const total = analyticsStats.total;
+    const times = analyticsStats.responseTimes;
+    const avgMs = times.length
+      ? Math.round(times.reduce((a, b) => a + b, 0) / times.length)
+      : null;
+
+    set('analyticsTotal',    total);
+    set('analyticsGold',     analyticsStats.gold);
+    set('analyticsSilver',   analyticsStats.silver);
+    set('analyticsBlocked',  analyticsStats.blocked);
+    set('analyticsCached',   analyticsStats.cached);
+    set('analyticsRateLim',  analyticsStats.rateLimited);
+    set('analyticsAvgTime',  avgMs !== null ? `${avgMs}ms` : '—');
+
+    // Cache / block percentages (shown if total > 0)
+    const pct = (n) => total > 0 ? `${Math.round((n / total) * 100)}%` : '—';
+    set('analyticsBlockPct',  pct(analyticsStats.blocked));
+    set('analyticsCachePct',  pct(analyticsStats.cached));
+
+    renderAnalyticsTimeline();
+  }
+
+  function renderAnalyticsTimeline() {
+    const tl = document.getElementById('analyticsTimeline');
+    if (!tl) return;
+
+    if (!analyticsTimeline.length) {
+      tl.innerHTML = '<div class="atl-empty">No requests yet — send a query through the gateway.</div>';
+      return;
+    }
+
+    tl.innerHTML = analyticsTimeline.map(entry => {
+      const timeStr = entry.time instanceof Date
+        ? entry.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        : '';
+      const planCls   = entry.plan === 'gold' ? 'atl-gold' : entry.plan === 'silver' ? 'atl-silver' : 'atl-unknown';
+      const statusCls = entry.status === 'blocked' ? 'atl-blocked'
+                      : entry.status === 'cached'  ? 'atl-cached'
+                      : entry.status === 'err'     ? 'atl-err'
+                      : 'atl-ok';
+      const statusLabel = entry.status === 'blocked' ? 'Blocked'
+                        : entry.status === 'cached'  ? 'Cached'
+                        : entry.status === 'err'     ? 'Error'
+                        : 'OK';
+      const queryText = entry.query
+        ? escapeHtml(entry.query.length > 55 ? entry.query.slice(0, 52) + '…' : entry.query)
+        : '<em>unknown query</em>';
+      return `<div class="atl-row">
+        <span class="atl-time">${timeStr}</span>
+        <span class="atl-query">${queryText}</span>
+        <span class="atl-badge ${planCls}">${entry.plan.charAt(0).toUpperCase() + entry.plan.slice(1)}</span>
+        <span class="atl-badge ${statusCls}">${statusLabel}</span>
+        ${entry.totalTime ? `<span class="atl-latency">${escapeHtml(entry.totalTime)}</span>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  /* ════════════════════════════════════════════════════════════
    * DEMO MODE — scripted scenario (no emojis, clean labels)
    * ════════════════════════════════════════════════════════════ */
 
@@ -788,6 +913,7 @@
         { name: 'AI Guardrails', passed: true },
         { name: 'Token Rate Limit', passed: true },
       ], plan: 'Gold',
+      latency: { type: 'normal', text: 'guard rails: ~2ms' },
     },
     {
       type: 'arrow', from: 'gateway', to: 'llm',
@@ -804,6 +930,7 @@
       label: '200 — 310ms',
       message: { lane: 'agent', text: 'Call findNearestStations' },
       badge: { type: 'ok', text: '310ms / 820 tokens / 7ms gw' },
+      latency: { type: 'slow', text: '310ms LLM inference' },
     },
 
     /* ── Phase 4 — Tool Execution ── */
@@ -813,6 +940,7 @@
       label: 'POST /lifeboat-mcp',
       message: { lane: 'gateway', text: 'MCP tools/call — findNearestStations', toolCall: { name: 'findNearestStations', args: { location: 'Poole, Dorset', limit: 5 } } },
       policies: [], plan: 'Gold',
+      latency: { type: 'normal', text: '~3ms policy overhead' },
     },
     {
       type: 'arrow', from: 'gateway', to: 'api',
@@ -829,6 +957,7 @@
       label: '200 — 38ms',
       message: { lane: 'agent', text: '5 nearest stations returned' },
       badge: { type: 'ok', text: '38ms / 5ms gw' },
+      latency: { type: 'normal', text: '38ms API + 5ms gw' },
     },
 
     /* ── Phase 5 — Format Response ── */
@@ -842,6 +971,7 @@
         { name: 'Token Rate Limit', passed: true },
         { name: 'Cache', passed: true },
       ], plan: 'Gold',
+      latency: { type: 'normal', text: 'cache miss + guard rails: ~2ms' },
     },
     {
       type: 'arrow', from: 'gateway', to: 'llm',
@@ -858,6 +988,7 @@
       label: '200 — 295ms',
       message: { lane: 'agent', text: 'Text response — 158 tokens' },
       badge: { type: 'ok', text: '295ms / 158 tokens / 6ms gw' },
+      latency: { type: 'slow', text: '295ms LLM inference' },
     },
 
     /* ── Phase 6 — Response Delivered ── */
@@ -1122,6 +1253,23 @@
     modeToggle.querySelectorAll('.mode-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.mode === newMode));
 
+    // Show/hide the sequence diagram area vs analytics panel
+    const showDiagram   = newMode !== 'analytics';
+    if (laneHeaders)    laneHeaders.style.display    = showDiagram ? '' : 'none';
+    if (graphArea)      graphArea.style.display      = showDiagram ? '' : 'none';
+    if (analyticsPanel) analyticsPanel.style.display = showDiagram ? 'none' : 'flex';
+
+    if (newMode === 'analytics') {
+      liveControls.style.display   = 'none';
+      demoControls.style.display   = 'none';
+      liveStats.style.display      = 'none';
+      stepCounter.style.display    = 'none';
+      scenarioPicker.style.display = 'none';
+      demoStop();
+      renderAnalytics();
+      return;
+    }
+
     stepsEl.innerHTML = '';
     resetGroupState();
 
@@ -1189,6 +1337,9 @@
   scenarioSelect.addEventListener('change', () => {
     if (mode === 'demo') demoReset();
   });
+
+  const btnResetAnalytics = document.getElementById('btnResetAnalytics');
+  if (btnResetAnalytics) btnResetAnalytics.addEventListener('click', resetAnalytics);
 
   /* ════════════════════════════════════════════════════════════
    * INIT

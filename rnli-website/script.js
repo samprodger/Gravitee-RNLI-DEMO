@@ -759,6 +759,7 @@ const authEls = {
     visitedSection:   document.getElementById('visitedSection'),
     visitedList:      document.getElementById('visitedList'),
     visitedSubtitle:  document.getElementById('visitedSubtitle'),
+    addVisitBtn:      document.getElementById('addVisitBtn'),
     oidcUrl:          document.getElementById('oidcUrl'),
     clientId:         document.getElementById('clientId'),
     goldBadge:        document.getElementById('goldBadge'),
@@ -932,8 +933,17 @@ async function handleOAuthCallback() {
                 email: ui.preferred_username || ui.email,
                 given_name: ui.given_name || '',
                 family_name: ui.family_name || '',
+                // Preserve raw fields so resolvePlan() can check all sources
                 plan: ui.plan || null,
+                additionalInformation: ui.additionalInformation || ui.additional_information || null,
             };
+        }
+
+        // Resolve plan from all available sources (userInfo, ID token, email fallback)
+        // and bake the result onto userInfo so downstream code always uses .plan
+        if (authConfig.userInfo) {
+            authConfig.userInfo.plan = resolvePlan(authConfig.userInfo, idToken);
+            console.log(`[Auth] Plan resolved: ${authConfig.userInfo.plan}`);
         }
 
         localStorage.setItem('rnli_access_token', authConfig.accessToken);
@@ -946,7 +956,7 @@ async function handleOAuthCallback() {
 
         updateUserDisplay();
         warmUpAI();
-        // Visit history is a Gold-exclusive feature
+        // Visit history API call — Gold only (Silver sees the plan-lock banner via updateUserDisplay)
         if (getUserPlan() === 'gold') {
             fetchVisitedStations();
         }
@@ -971,6 +981,14 @@ async function checkStoredAuth() {
     if (token && userInfoStr) {
         authConfig.accessToken = token;
         authConfig.userInfo = JSON.parse(userInfoStr);
+
+        // If plan wasn't resolved at login time (old stored data), re-resolve now.
+        // Also try the stored ID token in case it has a plan claim.
+        if (!authConfig.userInfo.plan) {
+            const storedIdToken = localStorage.getItem('rnli_id_token');
+            authConfig.userInfo.plan = resolvePlan(authConfig.userInfo, storedIdToken);
+        }
+
         updateUserDisplay();
         warmUpAI();
 
@@ -981,7 +999,7 @@ async function checkStoredAuth() {
             } catch (_) {}
         }
 
-        // Visit history is a Gold-exclusive feature
+        // Visit history API call — Gold only (Silver sees the plan-lock banner via updateUserDisplay)
         if (getUserPlan() === 'gold') {
             fetchVisitedStations();
         }
@@ -1064,18 +1082,57 @@ function toggleUserDropdown() {
 // ---------------------------------------------------------------------------
 
 /**
+ * Decode a JWT payload without library dependencies.
+ * Returns the parsed payload object, or {} on failure.
+ */
+function decodeJwtPayload(token) {
+    try {
+        const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+        return JSON.parse(atob(b64));
+    } catch (_) { return {}; }
+}
+
+/**
+ * Extract the plan claim from every available source in order of preference:
+ *   1. userInfo.plan  (set if AM TOKEN flow enrichment works)
+ *   2. ID token payload `plan` claim
+ *   3. userInfo.additional_information.plan (raw AM field — some versions expose it)
+ *   4. Email-based fallback for known demo accounts (always works)
+ *
+ * Called at login and when loading stored auth. Result stored on authConfig.userInfo.plan
+ * so all subsequent calls to getUserPlan() are a simple field read.
+ */
+function resolvePlan(userInfo, idToken) {
+    if (!userInfo) return null;
+
+    // 1 — already resolved (e.g. via enrichment policy)
+    if (userInfo.plan) return userInfo.plan;
+
+    // 2 — ID token payload (enrichment may work on the token even if not in userInfo)
+    if (idToken) {
+        const claims = decodeJwtPayload(idToken);
+        if (claims.plan) return claims.plan.toLowerCase();
+    }
+
+    // 3 — raw additionalInformation object (some AM versions include it in userInfo)
+    const addInfo = userInfo.additionalInformation || userInfo.additional_information || {};
+    if (addInfo.plan) return addInfo.plan.toLowerCase();
+
+    // 4 — email fallback for known demo accounts
+    const email = userInfo.email || '';
+    if (email === 'joe.doe@gravitee.io')  return 'gold';
+    if (email === 'silver.user@rnli.org') return 'silver';
+
+    return 'silver'; // safe default for authenticated users
+}
+
+/**
  * Determine the current user's tier.
- * Reads `plan` from the userInfo response (set as an AM additionalInformation claim).
- * Falls back to email lookup for demo robustness.
+ * After login, plan is resolved and stored on userInfo.plan by resolvePlan().
  */
 function getUserPlan() {
     if (!authConfig.userInfo) return null;
-    if (authConfig.userInfo.plan) return authConfig.userInfo.plan;
-    // Fallback: derive from known demo accounts
-    const email = authConfig.userInfo.email || '';
-    if (email === 'joe.doe@gravitee.io') return 'gold';
-    if (email === 'silver.user@rnli.org') return 'silver';
-    return 'silver'; // default for authenticated users
+    return authConfig.userInfo.plan || 'silver';
 }
 
 function updateUserDisplay() {
@@ -1112,11 +1169,31 @@ function updateUserDisplay() {
             }
         }
 
-        // Show visited section for Gold members only (personal visit history is a Gold-exclusive feature)
-        if (isGold) {
-            authEls.visitedSection?.classList.remove('hidden');
-        } else {
-            authEls.visitedSection?.classList.add('hidden');
+        // Show visited section for all members; Silver sees a plan-lock banner
+        if (authEls.visitedSection) {
+            authEls.visitedSection.classList.remove('hidden');
+            // Hide "Log a Visit" button for Silver (it's a Gold-only action)
+            if (authEls.addVisitBtn) {
+                authEls.addVisitBtn.style.display = isGold ? '' : 'none';
+            }
+            if (!isGold) {
+                // Inject plan-lock banner into visitedList (only once)
+                if (authEls.visitedList && !authEls.visitedList.querySelector('.plan-lock-banner')) {
+                    authEls.visitedList.innerHTML = `
+                        <div class="plan-lock-banner">
+                            <div class="plan-lock-icon">🔒</div>
+                            <div class="plan-lock-content">
+                                <h3>Gold Plan Feature</h3>
+                                <p>Station visit history is exclusive to Gold members. Upgrade to track your visits to RNLI stations and unlock AI-powered insights.</p>
+                                <div class="plan-lock-features">
+                                    <div class="plan-lock-feature">✓ Personal station visit history</div>
+                                    <div class="plan-lock-feature">✓ Recent lifeboat launch data per station</div>
+                                    <div class="plan-lock-feature">✓ AI visit recall across sessions</div>
+                                </div>
+                            </div>
+                        </div>`;
+                }
+            }
         }
 
         // Personalise the chat welcome message (once)
@@ -1362,6 +1439,16 @@ function renderVisitedError(msg) {
 // ---------------------------------------------------------------------------
 
 function openRecordVisitModal() {
+    // Gold-only feature — show upgrade prompt for Silver users
+    if (getUserPlan() === 'silver') {
+        appendMessage('agent',
+            '🔒 **Gold plan required** — Logging station visits is exclusive to Gold members.\n\n' +
+            'As a Silver member, you have access to station search and AI-powered location queries. ' +
+            'Upgrade to Gold to unlock personal visit history, recent launch data, and AI visit recall.');
+        openChat();
+        return;
+    }
+
     const modal = document.getElementById('recordVisitModal');
     if (!modal) return;
     // Pre-fill date to today
