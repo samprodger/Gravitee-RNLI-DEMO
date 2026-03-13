@@ -569,6 +569,9 @@
         </div>
     </footer>
 
+    <!-- Runtime config — generated from env vars by docker-entrypoint.d/40-env-config.sh -->
+    <!-- Falls back gracefully if not present (defaults are in script.js) -->
+    <script src="config.js" onerror="console.info('[Config] config.js not found — using script.js defaults')"></script>
     <script src="script.js"></script>
 </body>
 </html>

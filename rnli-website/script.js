@@ -883,8 +883,11 @@ async function handleOAuthCallback() {
 
     const storedState = sessionStorage.getItem('rnli_auth_state');
     if (state !== storedState) {
-        console.error('[Auth] State mismatch — possible CSRF');
+        console.error('[Auth] State mismatch — possible CSRF or stale OAuth callback');
+        sessionStorage.removeItem('rnli_code_verifier');
+        sessionStorage.removeItem('rnli_auth_state');
         window.history.replaceState({}, document.title, window.location.pathname);
+        checkStoredAuth(); // always initialise the UI, even on mismatch
         return;
     }
 
@@ -939,6 +942,7 @@ async function handleOAuthCallback() {
         window.history.replaceState({}, document.title, window.location.pathname);
 
         updateUserDisplay();
+        warmUpAI();
         // Visit history is a Gold-exclusive feature
         if (getUserPlan() === 'gold') {
             fetchVisitedStations();
@@ -949,6 +953,7 @@ async function handleOAuthCallback() {
         sessionStorage.removeItem('rnli_code_verifier');
         sessionStorage.removeItem('rnli_auth_state');
         window.history.replaceState({}, document.title, window.location.pathname);
+        checkStoredAuth(); // recover the UI even after a failed exchange
     }
 }
 
@@ -964,6 +969,7 @@ async function checkStoredAuth() {
         authConfig.accessToken = token;
         authConfig.userInfo = JSON.parse(userInfoStr);
         updateUserDisplay();
+        warmUpAI();
 
         if (!authConfig.oidcConfig) {
             try {
@@ -979,6 +985,42 @@ async function checkStoredAuth() {
     } else {
         updateUserDisplay();
     }
+}
+
+// ---------------------------------------------------------------------------
+// ONNX model warm-up
+// Sends a silent background request after auth so the first real query is fast.
+// The DistilBERT ONNX model takes ~60s to initialise on first request — this
+// hides that latency by running it immediately after login.
+// ---------------------------------------------------------------------------
+
+async function warmUpAI() {
+    if (sessionStorage.getItem('rnli_ai_warm')) return;
+    if (!config.isConnected || !config.agentUrl) return;
+    if (!authConfig.accessToken) return;
+
+    sessionStorage.setItem('rnli_ai_warm', '1'); // mark immediately to prevent duplicate calls
+    const prevStatus = els.chatStatus ? els.chatStatus.textContent : '';
+    setStatus('Getting AI ready...', 'warming');
+
+    try {
+        const reqHeaders = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authConfig.accessToken}` };
+        await fetch(config.agentUrl, {
+            method: 'POST',
+            headers: reqHeaders,
+            body: JSON.stringify({
+                jsonrpc: '2.0', id: 'warmup',
+                method: 'message/send',
+                params: {
+                    message: { messageId: 'warmup', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+                    contextId: 'warmup',
+                },
+            }),
+            signal: AbortSignal.timeout(90000),
+        });
+    } catch (_) { /* silent — warm-up failure is non-fatal */ }
+
+    setStatus(prevStatus || 'Connected', prevStatus ? '' : 'connected');
 }
 
 // ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@ gateway can resolve subscriptions when a JWT token is presented.
 """
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -662,6 +663,22 @@ def main():
             log(f"  ERROR: cannot parse {path.name}: {e}")
             failed += 1
             continue
+
+        # Allow Guard Rails sensitivity threshold to be overridden via env var.
+        # Useful for demo tuning without editing the API definition JSON.
+        guard_rails_threshold = os.environ.get("GUARD_RAILS_THRESHOLD")
+        if guard_rails_threshold and path.name == "03-llm-proxy.json":
+            try:
+                threshold_val = float(guard_rails_threshold)
+                for flow in raw.get("api", {}).get("flows", []):
+                    for step in flow.get("request", []) + flow.get("response", []):
+                        if step.get("policy") == "ai-prompt-guard-rails":
+                            cfg = step.get("configuration", {})
+                            cfg["sensitivityThreshold"] = threshold_val
+                            step["configuration"] = cfg
+                log(f"  Guard Rails threshold overridden to {threshold_val} (GUARD_RAILS_THRESHOLD env var)")
+            except ValueError:
+                log(f"  WARNING: Invalid GUARD_RAILS_THRESHOLD value '{guard_rails_threshold}' — using default from JSON")
 
         use_jwt = bool(raw.get(JWT_PLAN_FLAG, False))
         multi_plans = bool(raw.get(MULTI_PLANS_FLAG, False))

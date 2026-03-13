@@ -643,6 +643,21 @@ main {
 .badge-warn    { background: var(--warn-bg); color: var(--warn);        border: 1px solid rgba(217,119,6,0.15); }
 .badge-err     { background: var(--err-bg);  color: var(--err);         border: 1px solid rgba(220,38,38,0.15); }
 .badge-blocked { background: #FEF2F2;         color: var(--rnli-red);    border: 1px solid rgba(221,35,48,0.25); font-weight: 700; }
+.badge-cached  { background: #EFF6FF;         color: #1D4ED8;            border: 1px solid rgba(29,78,216,0.2);  font-weight: 700; }
+
+/* ── Latency chip (below arrow label, demo mode only) ──────── */
+.latency-chip {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 8px;
+  margin-top: 3px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.latency-normal { background: rgba(100,116,139,0.1); color: #64748B; border: 1px solid rgba(100,116,139,0.2); }
+.latency-fast   { background: #EFF6FF; color: #1D4ED8; border: 1px solid rgba(29,78,216,0.2); }
 
 /* ── Collapsible Flow Wrapper (per request) ─────────────── */
 .flow-wrapper {
@@ -1040,6 +1055,11 @@ footer {
   background: rgba(221, 35, 48, 0.10);
   color: var(--rnli-red);
   border-color: rgba(221, 35, 48, 0.28);
+}
+.wh-pill-cached {
+  background: rgba(29, 78, 216, 0.08);
+  color: #1D4ED8;
+  border-color: rgba(29, 78, 216, 0.25);
 }
 
 /* ── Waiting option cards ──────────────────────────────────── */

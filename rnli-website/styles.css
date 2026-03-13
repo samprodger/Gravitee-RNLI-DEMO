@@ -717,6 +717,8 @@ body::before {
 }
 .chat-status.connected { color: #6ee7b7; }
 .chat-status.error     { color: #fca5a5; }
+.chat-status.warming   { color: #fcd34d; animation: pulse-opacity 1.5s ease-in-out infinite; }
+@keyframes pulse-opacity { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 
 .chat-header-actions { display: flex; gap: 4px; }
 

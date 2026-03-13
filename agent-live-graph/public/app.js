@@ -136,6 +136,14 @@
         arrow.appendChild(lbl);
       }
 
+      // Latency chip below the label (optional — shows ms for demo scenarios)
+      if (step.latency) {
+        const lat = document.createElement('span');
+        lat.className = `latency-chip latency-${step.latency.type || 'normal'}`;
+        lat.textContent = step.latency.text;
+        arrow.appendChild(lat);
+      }
+
       // Animated particle
       const particle = document.createElement('div');
       particle.className = 'arrow-particle';
@@ -915,10 +923,81 @@
     },
   ];
 
+  /* ── Cache Hit scenario — same query returns instantly from cache ── */
+  const SCENARIO_CACHE_HIT = [
+    { type: 'divider', label: 'Phase 1 — User Request (same query as before)' },
+    {
+      type: 'arrow', from: 'client', to: 'gateway',
+      label: 'POST /stations-agent/',
+      message: { lane: 'gateway', text: 'Find me the nearest RNLI stations to Poole in Dorset' },
+      policies: [], plan: 'Gold',
+    },
+    {
+      type: 'arrow', from: 'gateway', to: 'agent',
+      label: 'Authenticated & forwarded',
+      message: { lane: 'agent', text: 'Processing request (Gold plan)' },
+    },
+
+    { type: 'divider', label: 'Phase 2 — LLM Cache Hit' },
+    {
+      type: 'arrow', from: 'agent', to: 'gateway',
+      label: 'POST /llm-proxy/chat/completions',
+      message: { lane: 'gateway', text: 'LLM request — checking cache first' },
+      policies: [
+        { name: 'AI Guardrails', passed: true },
+        { name: 'Cache', passed: true },
+      ], plan: 'Gold',
+    },
+    {
+      type: 'arrow', from: 'gateway', to: 'agent',
+      label: '200 — Cache hit',
+      message: { lane: 'agent', text: 'Identical prompt found in cache — LLM not called' },
+      badge: { type: 'cached', text: '180ms (was 1,200ms)' },
+      latency: { type: 'fast', text: '6x faster — cached response' },
+    },
+
+    { type: 'divider', label: 'Phase 3 — Response Delivered' },
+    {
+      type: 'arrow', from: 'agent', to: 'gateway',
+      label: 'A2A response',
+      message: { lane: 'gateway', text: 'Agent response ready' },
+    },
+    {
+      type: 'arrow', from: 'gateway', to: 'client',
+      label: '200 — 190ms total',
+      message: { lane: 'client', text: 'Response delivered — served from cache' },
+      badge: { type: 'cached', text: '190ms total / Gold plan' },
+    },
+  ];
+
+  /* ── Rate Limit scenario — Silver plan quota exceeded ── */
+  const SCENARIO_RATE_LIMIT = [
+    { type: 'divider', label: 'Phase 1 — User Request (quota exhausted)' },
+    {
+      type: 'arrow', from: 'client', to: 'gateway',
+      label: 'POST /stations-agent/',
+      message: { lane: 'gateway', text: 'Find me the nearest RNLI stations to Edinburgh' },
+      policies: [], plan: 'Silver',
+    },
+
+    { type: 'divider', label: 'Phase 2 — Rate Limit Enforced' },
+    {
+      type: 'arrow', from: 'gateway', to: 'client',
+      label: '429 — Too Many Requests',
+      message: { lane: 'gateway', text: 'Silver plan quota exceeded — request blocked at gateway' },
+      policies: [
+        { name: 'Rate Limit', passed: false },
+      ], plan: 'Silver',
+      badge: { type: 'blocked', text: '429 / 5 req/min limit' },
+    },
+  ];
+
   function getActiveScenario() {
-    return scenarioSelect && scenarioSelect.value === 'guardrails'
-      ? SCENARIO_GUARD_RAILS
-      : SCENARIO;
+    const val = scenarioSelect ? scenarioSelect.value : 'happy';
+    if (val === 'guardrails') return SCENARIO_GUARD_RAILS;
+    if (val === 'cache')      return SCENARIO_CACHE_HIT;
+    if (val === 'ratelimit')  return SCENARIO_RATE_LIMIT;
+    return SCENARIO;
   }
 
   function getTotalDemoSteps() { return getActiveScenario().length; }
@@ -980,31 +1059,56 @@
   }
 
   function showDemoWaiting() {
-    const isGuardRails = scenarioSelect && scenarioSelect.value === 'guardrails';
+    const val = scenarioSelect ? scenarioSelect.value : 'happy';
     const w = document.createElement('div');
     w.className = 'waiting-state';
-    if (isGuardRails) {
-      w.innerHTML = `
-        <img src="assets/gravitee-mark.svg" class="waiting-logo" alt="Gravitee" />
-        <p>Press Play to start the demo</p>
-        <small>Watch a Silver-plan user send a harmful query — and see Gravitee's AI Guardrails block it before it ever reaches the LLM.</small>
-        <div class="waiting-hints">
-          <span class="wh-pill wh-pill-blocked">AI Guard Rails</span>
-          <span class="wh-pill">Silver Plan</span>
-          <span class="wh-pill">400 Blocked</span>
-        </div>`;
-    } else {
-      w.innerHTML = `
-        <img src="assets/gravitee-mark.svg" class="waiting-logo" alt="Gravitee" />
-        <p>Press Play to start the demo</p>
-        <small>Watch a Gold-plan user ask "Find me the nearest RNLI stations to Poole" — and see every hop through the Gravitee Gateway.</small>
-        <div class="waiting-hints">
-          <span class="wh-pill">AI Guard Rails</span>
-          <span class="wh-pill">Token Rate Limit</span>
-          <span class="wh-pill">Response Cache</span>
-          <span class="wh-pill">MCP Tool Calls</span>
-        </div>`;
-    }
+
+    const configs = {
+      happy: {
+        desc: 'Watch a Gold-plan user ask "Find me the nearest RNLI stations to Poole" — and see every hop through the Gravitee Gateway.',
+        pills: [
+          { label: 'AI Guard Rails', cls: '' },
+          { label: 'Token Rate Limit', cls: '' },
+          { label: 'Response Cache', cls: '' },
+          { label: 'MCP Tool Calls', cls: '' },
+        ],
+      },
+      guardrails: {
+        desc: 'Watch a Silver-plan user send a harmful query — and see Gravitee\'s AI Guardrails block it before it ever reaches the LLM.',
+        pills: [
+          { label: 'AI Guard Rails', cls: 'wh-pill-blocked' },
+          { label: 'Silver Plan', cls: '' },
+          { label: '400 Blocked', cls: 'wh-pill-blocked' },
+        ],
+      },
+      cache: {
+        desc: 'Watch the same Gold-plan query return instantly from cache — ~6x faster, LLM never called.',
+        pills: [
+          { label: 'Response Cache', cls: 'wh-pill-cached' },
+          { label: 'Gold Plan', cls: '' },
+          { label: '~180ms vs 1,200ms', cls: 'wh-pill-cached' },
+        ],
+      },
+      ratelimit: {
+        desc: 'Watch a Silver-plan user hit their request quota — blocked at the gateway before the agent is even contacted.',
+        pills: [
+          { label: 'Rate Limit', cls: 'wh-pill-blocked' },
+          { label: 'Silver Plan', cls: '' },
+          { label: '429 Blocked', cls: 'wh-pill-blocked' },
+        ],
+      },
+    };
+
+    const cfg = configs[val] || configs.happy;
+    const pillsHtml = cfg.pills.map(p =>
+      `<span class="wh-pill ${p.cls}">${p.label}</span>`).join('');
+
+    w.innerHTML = `
+      <img src="assets/gravitee-mark.svg" class="waiting-logo" alt="Gravitee" />
+      <p>Press Play to start the demo</p>
+      <small>${cfg.desc}</small>
+      <div class="waiting-hints">${pillsHtml}</div>`;
+
     stepsEl.appendChild(w);
   }
 

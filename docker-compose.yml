@@ -202,6 +202,9 @@ services:
     environment:
       - APIM_BASE_URL=http://gio-apim-management-api:8083
       - AM_BASE_URL=http://gio-am-management-api:8093
+      # Guard Rails sensitivity threshold (0.0–1.0). Lower = more sensitive.
+      # Default in 03-llm-proxy.json is 0.5. Override here to tune without editing JSON.
+      # - GUARD_RAILS_THRESHOLD=0.5
     networks: [southbound]
 
   # ---------------------------------------------------------------------------
@@ -256,6 +259,14 @@ services:
     restart: unless-stopped
     ports:
       - "8002:80"
+    # Override env vars to point the website at a different gateway / auth server.
+    # Defaults (localhost) are set in rnli-website/docker-entrypoint.d/40-env-config.sh
+    # environment:
+    #   AGENT_CARD_URL: http://localhost:8082/stations-agent/.well-known/agent-card.json
+    #   OIDC_URL: http://localhost:8092/gravitee/oidc/.well-known/openid-configuration
+    #   OIDC_CLIENT_ID: rnli-lifeboat
+    #   REDIRECT_URI: http://localhost:8002/
+    #   VISITED_STATIONS_URL: http://localhost:8082/visited-stations/history
     networks: [northbound]
 
   # ---------------------------------------------------------------------------
