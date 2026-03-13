@@ -274,19 +274,23 @@ class AMInitializer:
     def configure_application_settings(self, app_id: str, app_config: Dict[str, Any]) -> bool:
         scopes = app_config.get("scopes", [])
         skip_consent = app_config.get("skipConsent", False)
-        if not scopes and not skip_consent:
+        token_auth_method = app_config.get("tokenEndpointAuthMethod")
+        if not scopes and not skip_consent and not token_auth_method:
             return True
         url = f"{AM_BASE_URL}/management/organizations/{ORGANIZATION}/environments/{ENVIRONMENT}/domains/{self.domain_id}/applications/{app_id}"
         # Build a minimal PUT payload — only the fields we want to change.
         # Note: top-level read-only fields (id, domain, type, createdAt, etc.) must NOT be included.
         # skipConsent lives under settings.advanced (not settings.oauth) in AM's data model.
         settings: Dict[str, Any] = {}
-        if scopes:
-            settings["oauth"] = {
-                "scopeSettings": [
+        if scopes or token_auth_method:
+            oauth: Dict[str, Any] = {}
+            if scopes:
+                oauth["scopeSettings"] = [
                     {"scope": s, "defaultScope": False, "scopeApproval": 300} for s in scopes
                 ]
-            }
+            if token_auth_method:
+                oauth["tokenEndpointAuthMethod"] = token_auth_method
+            settings["oauth"] = oauth
         if skip_consent:
             settings["advanced"] = {"skipConsent": True}
         payload = {"settings": settings}
@@ -297,6 +301,8 @@ class AMInitializer:
                 log(f"  ✓ Scopes configured: {scopes}")
             if skip_consent:
                 log(f"  ✓ skipConsent=true configured")
+            if token_auth_method:
+                log(f"  ✓ tokenEndpointAuthMethod={token_auth_method} configured")
             return True
         except requests.exceptions.RequestException as e:
             log(f"WARNING: Failed to configure app settings: {e}")

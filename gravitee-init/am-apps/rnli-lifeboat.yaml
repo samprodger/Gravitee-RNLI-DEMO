@@ -19,3 +19,6 @@ scopes:
 
 # Skip the scope consent page — users are pre-approved in this demo
 skipConsent: true
+
+# Public PKCE browser client — no client secret used for token exchange
+tokenEndpointAuthMethod: "none"
