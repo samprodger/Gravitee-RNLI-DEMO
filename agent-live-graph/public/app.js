@@ -60,6 +60,8 @@
   const modalTitle   = document.getElementById('modalTitle');
   const modalBody    = document.getElementById('modalBody');
   const modalClose   = document.getElementById('modalClose');
+  const scenarioPicker = document.getElementById('scenarioPicker');
+  const scenarioSelect = document.getElementById('scenarioSelect');
 
   /* ── State ──────────────────────────────────────────────── */
   let mode         = 'live';
@@ -865,14 +867,70 @@
     },
   ];
 
-  const totalDemoSteps = SCENARIO.length;
+  /* ── Guard Rails scenario — Silver plan, harmful query blocked ── */
+  const SCENARIO_GUARD_RAILS = [
+    /* ── Phase 1 — User Request (Silver plan, harmful query) ── */
+    { type: 'divider', label: 'Phase 1 — User Request' },
+    {
+      type: 'arrow', from: 'client', to: 'gateway',
+      label: 'POST /stations-agent/',
+      message: { lane: 'gateway', text: 'How do I make a weapon to hurt someone?' },
+      policies: [], plan: 'Silver',
+    },
+    {
+      type: 'arrow', from: 'gateway', to: 'agent',
+      label: 'Authenticated & forwarded',
+      message: { lane: 'agent', text: 'Processing request (Silver plan)' },
+    },
+
+    /* ── Phase 2 — Guard Rails Check ── */
+    { type: 'divider', label: 'Phase 2 — Guard Rails Check' },
+    {
+      type: 'arrow', from: 'agent', to: 'gateway',
+      label: 'POST /llm-proxy/chat/completions',
+      message: { lane: 'gateway', text: 'LLM request intercepted by AI Guardrails' },
+      policies: [
+        { name: 'AI Guardrails', passed: false },
+      ], plan: 'Silver',
+    },
+    {
+      type: 'arrow', from: 'gateway', to: 'agent',
+      label: '400 — Content blocked',
+      message: { lane: 'agent', text: 'Guard Rails: content policy violation — request denied' },
+      badge: { type: 'blocked', text: '400 Blocked' },
+    },
+
+    /* ── Phase 3 — Error Returned to Client ── */
+    { type: 'divider', label: 'Phase 3 — Request Rejected' },
+    {
+      type: 'arrow', from: 'agent', to: 'gateway',
+      label: 'Error forwarded',
+      message: { lane: 'gateway', text: 'Propagating 400 to client' },
+    },
+    {
+      type: 'arrow', from: 'gateway', to: 'client',
+      label: '400 — Guard Rails',
+      message: { lane: 'client', text: 'Request blocked — content policy violation' },
+      badge: { type: 'blocked', text: '400 blocked / Silver plan' },
+    },
+  ];
+
+  function getActiveScenario() {
+    return scenarioSelect && scenarioSelect.value === 'guardrails'
+      ? SCENARIO_GUARD_RAILS
+      : SCENARIO;
+  }
+
+  function getTotalDemoSteps() { return getActiveScenario().length; }
 
   function demoShowNext() {
-    if (demoCursor >= totalDemoSteps) { demoStop(); return; }
+    const scenario = getActiveScenario();
+    const total    = getTotalDemoSteps();
+    if (demoCursor >= total) { demoStop(); return; }
 
     // Create flow wrapper before the first step
     if (demoCursor === 0 && !currentFlowBody) {
-      const summary = extractFlowSummary(SCENARIO);
+      const summary = extractFlowSummary(scenario);
       const wrapper = createFlowWrapper(summary);
       stepsEl.appendChild(wrapper);
       currentFlowBody = wrapper.querySelector('.flow-body');
@@ -880,13 +938,13 @@
       requestAnimationFrame(() => requestAnimationFrame(() => wrapper.classList.add('visible')));
     }
 
-    const step = SCENARIO[demoCursor];
+    const step = scenario[demoCursor];
     const container = currentFlowBody || stepsEl;
     appendStepToDOM(step, container);
 
     demoCursor++;
     stepNumEl.textContent  = demoCursor;
-    progressEl.style.width = `${(demoCursor / totalDemoSteps) * 100}%`;
+    progressEl.style.width = `${(demoCursor / total) * 100}%`;
     scrollToBottom();
 
     if (demoPlaying) {
@@ -896,7 +954,7 @@
   }
 
   function demoPlay() {
-    if (demoCursor >= totalDemoSteps) demoReset();
+    if (demoCursor >= getTotalDemoSteps()) demoReset();
     demoPlaying = true;
     playIcon.style.display  = 'none';
     pauseIcon.style.display = 'block';
@@ -916,23 +974,37 @@
     stepsEl.innerHTML = '';
     resetGroupState();
     stepNumEl.textContent  = '0';
+    stepTotalEl.textContent = getTotalDemoSteps();
     progressEl.style.width = '0%';
     showDemoWaiting();
   }
 
   function showDemoWaiting() {
+    const isGuardRails = scenarioSelect && scenarioSelect.value === 'guardrails';
     const w = document.createElement('div');
     w.className = 'waiting-state';
-    w.innerHTML = `
-      <img src="assets/gravitee-mark.svg" class="waiting-logo" alt="Gravitee" />
-      <p>Press Play to start the demo</p>
-      <small>Watch a Gold-plan user ask "Find me the nearest RNLI stations to Poole" — and see every hop through the Gravitee Gateway.</small>
-      <div class="waiting-hints">
-        <span class="wh-pill">AI Guard Rails</span>
-        <span class="wh-pill">Token Rate Limit</span>
-        <span class="wh-pill">Response Cache</span>
-        <span class="wh-pill">MCP Tool Calls</span>
-      </div>`;
+    if (isGuardRails) {
+      w.innerHTML = `
+        <img src="assets/gravitee-mark.svg" class="waiting-logo" alt="Gravitee" />
+        <p>Press Play to start the demo</p>
+        <small>Watch a Silver-plan user send a harmful query — and see Gravitee's AI Guardrails block it before it ever reaches the LLM.</small>
+        <div class="waiting-hints">
+          <span class="wh-pill wh-pill-blocked">AI Guard Rails</span>
+          <span class="wh-pill">Silver Plan</span>
+          <span class="wh-pill">400 Blocked</span>
+        </div>`;
+    } else {
+      w.innerHTML = `
+        <img src="assets/gravitee-mark.svg" class="waiting-logo" alt="Gravitee" />
+        <p>Press Play to start the demo</p>
+        <small>Watch a Gold-plan user ask "Find me the nearest RNLI stations to Poole" — and see every hop through the Gravitee Gateway.</small>
+        <div class="waiting-hints">
+          <span class="wh-pill">AI Guard Rails</span>
+          <span class="wh-pill">Token Rate Limit</span>
+          <span class="wh-pill">Response Cache</span>
+          <span class="wh-pill">MCP Tool Calls</span>
+        </div>`;
+    }
     stepsEl.appendChild(w);
   }
 
@@ -950,10 +1022,11 @@
     resetGroupState();
 
     if (newMode === 'live') {
-      liveControls.style.display = 'flex';
-      demoControls.style.display = 'none';
-      liveStats.style.display    = 'flex';
-      stepCounter.style.display  = 'none';
+      liveControls.style.display   = 'flex';
+      demoControls.style.display   = 'none';
+      liveStats.style.display      = 'flex';
+      stepCounter.style.display    = 'none';
+      scenarioPicker.style.display = 'none';
       demoStop();
       if (liveQueueTimer) { clearTimeout(liveQueueTimer); liveQueueTimer = null; }
       liveQueue = [];
@@ -965,11 +1038,12 @@
       liveLabel.classList.remove('has-events');
       showLiveWaiting();
     } else {
-      liveControls.style.display = 'none';
-      demoControls.style.display = 'flex';
-      liveStats.style.display    = 'none';
-      stepCounter.style.display  = 'block';
-      stepTotalEl.textContent    = totalDemoSteps;
+      liveControls.style.display   = 'none';
+      demoControls.style.display   = 'flex';
+      liveStats.style.display      = 'none';
+      stepCounter.style.display    = 'block';
+      scenarioPicker.style.display = 'flex';
+      stepTotalEl.textContent      = getTotalDemoSteps();
       demoReset();
     }
   }
@@ -1006,6 +1080,10 @@
     demoSpeed = parseFloat(speedRange.value);
     speedLabelEl.textContent = demoSpeed + 'x';
     document.documentElement.style.setProperty('--speed', demoSpeed);
+  });
+
+  scenarioSelect.addEventListener('change', () => {
+    if (mode === 'demo') demoReset();
   });
 
   /* ════════════════════════════════════════════════════════════
