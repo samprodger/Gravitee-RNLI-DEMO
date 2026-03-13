@@ -143,7 +143,26 @@ cp .env-template .env
 # Edit .env: set GRAVITEE_LICENSE=<your base64 license key>
 ```
 
-### 2. Install Ollama (Recommended)
+### 2. Download the AI Guard Rails Model
+
+The **AI Guard Rails** feature uses a DistilBERT ONNX model to classify LLM requests for harmful content at the gateway level — before they reach the LLM. The model is published publicly by Gravitee on Hugging Face but is too large to include in this repo (129 MB).
+
+```bash
+# Install the Hugging Face CLI if you don't have it
+pip install huggingface_hub
+
+# Download the quantised ONNX model into the correct directory
+huggingface-cli download gravitee-io/distilbert-multilingual-toxicity-classifier \
+  model.quant.onnx \
+  --local-dir apim-gateway-models/gravitee-io/distilbert-multilingual-toxicity-classifier/
+```
+
+> The model is mounted into the Gravitee Gateway container automatically via `docker-compose.yml`.
+> Without it the gateway starts normally but the AI Guardrails policy will not enforce content checks.
+
+Model on Hugging Face: [gravitee-io/distilbert-multilingual-toxicity-classifier](https://huggingface.co/gravitee-io/distilbert-multilingual-toxicity-classifier)
+
+### 3. Install Ollama (Recommended)
 
 Running Ollama locally is faster than containerised inference (especially on Apple Silicon).
 
