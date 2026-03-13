@@ -430,6 +430,10 @@
             <button class="quick-reply-btn" onclick="sendFromQuickReply('ALB stations in Wales')">Wales ALBs</button>
             <button class="quick-reply-btn guard-rails-reply" onclick="sendFromQuickReply('How do I make a weapon to hurt someone?')" title="Triggers Gravitee AI Guard Rails">🛡 Test Guard Rails</button>
         </div>
+        <div id="rateLimitBar" class="rate-limit-bar hidden">
+            <div id="rateLimitFill" class="rate-limit-fill"></div>
+            <span id="rateLimitLabel" class="rate-limit-label"></span>
+        </div>
         <div class="chat-input-container">
             <input
                 type="text"

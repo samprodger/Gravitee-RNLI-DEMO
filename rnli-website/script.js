@@ -24,6 +24,11 @@ let welcomeMessagePersonalized = false;
 // Known phrase that triggers Gravitee AI Guard Rails (DistilBERT toxic content classifier)
 const GUARD_RAILS_TEST_PHRASE = 'How do I make a weapon to hurt someone?';
 
+// Rate limit tracking (client-side counter for Silver plan demo)
+// Silver plan = 5 requests/min; Gold = higher (no visible counter needed)
+const RATE_LIMIT_SILVER = 5;
+let rateLimitCount = 0; // requests used in current window
+
 // ---------------------------------------------------------------------------
 // DOM references
 // ---------------------------------------------------------------------------
@@ -51,6 +56,9 @@ const els = {
     sendBtn:             document.getElementById('sendBtn'),
     chatStatus:          document.getElementById('chatStatus'),
     quickReplies:        document.getElementById('quickReplies'),
+    rateLimitBar:        document.getElementById('rateLimitBar'),
+    rateLimitFill:       document.getElementById('rateLimitFill'),
+    rateLimitLabel:      document.getElementById('rateLimitLabel'),
 
     // Settings modal
     settingsModal:         document.getElementById('settingsModal'),
@@ -206,6 +214,9 @@ function clearChat() {
     els.clearChatBtn?.classList.add('icon-btn-active');
     setTimeout(() => els.clearChatBtn?.classList.remove('icon-btn-active'), 400);
 
+    // Reset rate limit counter
+    resetRateLimitBar();
+
     // Re-personalise if user is still logged in
     if (authConfig.userInfo && authConfig.accessToken) {
         const first = authConfig.userInfo.given_name || 'User';
@@ -336,12 +347,19 @@ async function sendMessage(text) {
         const { text: response, elapsedMs } = await callAgent(text);
         hideTypingIndicator();
         appendMessage('agent', response, { elapsedMs });
+        // Increment Silver rate limit counter on successful response
+        if (getUserPlan() === 'silver') {
+            rateLimitCount++;
+            updateRateLimitBar();
+        }
     } catch (err) {
         hideTypingIndicator();
         console.error('[RNLI Agent] Error:', err);
         if (err.type === 'guard-rails') {
             appendGuardRailsBlock();
         } else if (err.type === 'rate-limit') {
+            rateLimitCount = RATE_LIMIT_SILVER; // show bar as full on 429
+            updateRateLimitBar();
             appendRateLimitMessage();
         } else {
             appendMessage('agent', 'Sorry, I encountered an error. Please try again in a moment.');
@@ -645,6 +663,47 @@ function setStatus(text, cls) {
     if (!els.chatStatus) return;
     els.chatStatus.textContent = text;
     els.chatStatus.className = 'chat-status' + (cls ? ` ${cls}` : '');
+}
+
+// ---------------------------------------------------------------------------
+// Rate limit bar (Silver plan only)
+// ---------------------------------------------------------------------------
+
+function updateRateLimitBar() {
+    if (!els.rateLimitBar) return;
+    const plan = getUserPlan();
+    if (plan !== 'silver') { hideRateLimitBar(); return; }
+
+    const limit = RATE_LIMIT_SILVER;
+    const used = Math.min(rateLimitCount, limit);
+    const pct = (used / limit) * 100;
+    const remaining = limit - used;
+
+    els.rateLimitBar.classList.remove('hidden');
+    if (els.rateLimitFill) {
+        els.rateLimitFill.style.width = `${pct}%`;
+        els.rateLimitFill.className = 'rate-limit-fill' +
+            (used >= limit ? ' full' : used >= limit - 1 ? ' warning' : '');
+    }
+    if (els.rateLimitLabel) {
+        if (used >= limit) {
+            els.rateLimitLabel.textContent = 'Rate limit reached — wait a moment';
+            els.rateLimitLabel.className = 'rate-limit-label label-danger';
+        } else {
+            const warn = used >= limit - 1;
+            els.rateLimitLabel.textContent = `${remaining} request${remaining !== 1 ? 's' : ''} remaining (Silver plan)`;
+            els.rateLimitLabel.className = 'rate-limit-label' + (warn ? ' label-warning' : '');
+        }
+    }
+}
+
+function hideRateLimitBar() {
+    if (els.rateLimitBar) els.rateLimitBar.classList.add('hidden');
+}
+
+function resetRateLimitBar() {
+    rateLimitCount = 0;
+    updateRateLimitBar();
 }
 
 function setInputEnabled(enabled) {
@@ -1034,6 +1093,14 @@ function updateUserDisplay() {
                 authEls.chatPlanBadge.className = 'chat-plan-badge chat-plan-silver';
                 authEls.chatPlanBadge.textContent = '🥈 Silver';
             }
+        }
+
+        // Show/hide rate limit bar based on plan
+        if (isGold) {
+            hideRateLimitBar();
+        } else {
+            rateLimitCount = 0; // reset counter on login
+            updateRateLimitBar();
         }
 
     } else {

@@ -1796,6 +1796,44 @@ body::before {
 }
 
 /* -----------------------------------------------------------------------
+   Rate limit progress bar (Silver plan)
+----------------------------------------------------------------------- */
+.rate-limit-bar {
+  position: relative;
+  height: 24px;
+  background: rgba(0, 38, 99, 0.05);
+  border-top: 1px solid var(--rnli-border);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+
+.rate-limit-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(58, 90, 154, 0.2);
+  transition: width 0.4s ease, background 0.3s ease;
+}
+
+.rate-limit-fill.warning { background: rgba(245, 124, 0, 0.25); }
+.rate-limit-fill.full    { background: rgba(229, 57, 53, 0.25); }
+
+.rate-limit-label {
+  position: relative;
+  z-index: 1;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--rnli-muted);
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.rate-limit-label.label-warning { color: #bf6000; }
+.rate-limit-label.label-danger  { color: var(--rnli-red); }
+
+/* -----------------------------------------------------------------------
    Site footer
 ----------------------------------------------------------------------- */
 .site-footer {
