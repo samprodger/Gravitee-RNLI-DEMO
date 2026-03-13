@@ -1502,6 +1502,19 @@ body::before {
   border-color: #f28800;
 }
 
+/* Guard rails test button */
+.quick-reply-btn.guard-rails-reply {
+  background: rgba(230, 81, 0, 0.07);
+  color: #bf360c;
+  border-color: rgba(230, 81, 0, 0.3);
+}
+
+.quick-reply-btn.guard-rails-reply:hover {
+  background: rgba(230, 81, 0, 0.15);
+  border-color: #e65100;
+  color: #bf360c;
+}
+
 /* Add visit button inside visited section */
 .add-visit-btn {
   display: inline-flex;
