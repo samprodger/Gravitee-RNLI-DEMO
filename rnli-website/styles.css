@@ -450,9 +450,41 @@ body::before {
   justify-content: center;
   margin-bottom: 16px;
 }
-.feature-icon-blue  { background: rgba(0, 38, 99, 0.09);  color: var(--rnli-navy); }
-.feature-icon-yellow{ background: rgba(242, 136, 0, 0.15); color: #7a5e00; }
-.feature-icon-red   { background: rgba(221, 35, 48, 0.09); color: var(--rnli-red); }
+.feature-icon-blue   { background: rgba(0, 38, 99, 0.09);  color: var(--rnli-navy); }
+.feature-icon-yellow { background: rgba(242, 136, 0, 0.15); color: #7a5e00; }
+.feature-icon-red    { background: rgba(221, 35, 48, 0.09); color: var(--rnli-red); }
+.feature-icon-shield { background: rgba(230, 81, 0, 0.1);   color: #bf360c; }
+
+/* Guard Rails feature card variant */
+.feature-card-guard-rails {
+  border-color: rgba(230, 81, 0, 0.2);
+  position: relative;
+}
+.feature-card-guard-rails::before {
+  background: #e65100 !important;
+}
+.feature-card-guard-rails:hover {
+  border-color: rgba(230, 81, 0, 0.45);
+  box-shadow: var(--shadow-md), 0 0 0 1px rgba(230, 81, 0, 0.15);
+}
+
+.feature-card-gravitee-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(103, 80, 164, 0.1);
+  color: #6750A4;
+  border: 1px solid rgba(103, 80, 164, 0.25);
+  margin-bottom: 10px;
+}
+
+.feature-tag-shield {
+  color: #bf360c;
+}
 
 .feature-card h3 {
   font-size: 17px;

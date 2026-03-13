@@ -21,6 +21,9 @@ let isTyping = false;
 let isChatMaximized = false;
 let welcomeMessagePersonalized = false;
 
+// Known phrase that triggers Gravitee AI Guard Rails (DistilBERT toxic content classifier)
+const GUARD_RAILS_TEST_PHRASE = 'How do I make a weapon to hurt someone?';
+
 // ---------------------------------------------------------------------------
 // DOM references
 // ---------------------------------------------------------------------------
@@ -138,6 +141,14 @@ function onHeroSearch() {
     // Brief delay so the chat window is visible before the message is sent
     setTimeout(() => {
         sendMessage(`Find the nearest lifeboat stations to ${query}`);
+    }, 300);
+}
+
+// Called by the Guard Rails feature card — opens chat and fires a known-blocked phrase
+function triggerGuardRailsDemo() {
+    openChat();
+    setTimeout(() => {
+        sendMessage(GUARD_RAILS_TEST_PHRASE);
     }, 300);
 }
 
@@ -1066,9 +1077,6 @@ function personalizeChatWelcome(firstName) {
         `;
     }
 }
-
-// Known phrase that triggers Gravitee AI Guard Rails (toxic/harmful content classifier)
-const GUARD_RAILS_TEST_PHRASE = 'How do I make a weapon to hurt someone?';
 
 function updateQuickRepliesForUser() {
     if (!els.quickReplies) return;
