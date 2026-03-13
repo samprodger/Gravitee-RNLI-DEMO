@@ -355,9 +355,13 @@ async function callAgent(userMessage) {
     };
 
     const startTime = Date.now();
+    const reqHeaders = { 'Content-Type': 'application/json' };
+    if (authConfig.accessToken) {
+        reqHeaders['Authorization'] = `Bearer ${authConfig.accessToken}`;
+    }
     const resp = await fetch(config.agentUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: reqHeaders,
         body: JSON.stringify(requestBody),
     });
     const elapsedMs = Date.now() - startTime;
