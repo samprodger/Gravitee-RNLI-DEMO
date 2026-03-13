@@ -5,6 +5,12 @@
 
 /* ── Tokens ────────────────────────────────────────────────── */
 :root {
+  /* RNLI brand colours */
+  --rnli-navy:      #002663;
+  --rnli-navy-mid:  #003a8c;
+  --rnli-orange:    #f28800;
+  --rnli-red:       #dd2330;
+
   --bg:             #F7F8FA;
   --bg-surface:     #FFFFFF;
   --border:         rgba(0,0,0,0.07);
@@ -59,15 +65,16 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── Header ────────────────────────────────────────────────── */
+/* ── Header (RNLI navy background) ─────────────────────────── */
 header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   height: 54px;
   padding: 0 24px;
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border);
+  background: var(--rnli-navy);
+  border-bottom: none;
+  border-top: 4px solid var(--rnli-orange);
   position: relative;
   z-index: 50;
 }
@@ -78,24 +85,45 @@ header {
   font-size: 15px;
   font-weight: 700;
   letter-spacing: -0.3px;
-  color: var(--text);
+  color: rgba(255,255,255,0.95);
 }
 
-.logo { flex-shrink: 0; height: 22px; }
+/* Gravitee logo on dark header — invert to white */
+.logo { flex-shrink: 0; height: 20px; filter: brightness(0) invert(1); opacity: 0.9; }
 
 .header-sep {
   width: 1px;
   height: 20px;
-  background: var(--border-mid);
+  background: rgba(255,255,255,0.20);
+}
+
+/* RNLI lifeboat mark in header */
+.rnli-logo-mark {
+  width: 38px;
+  height: 28px;
+  background: var(--rnli-orange);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.rnli-logo-text {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #fff;
+  flex-shrink: 0;
 }
 
 .header-right { display: flex; align-items: center; gap: 14px; }
 
-/* ── Mode Toggle ───────────────────────────────────────────── */
+/* ── Mode Toggle (on dark header) ──────────────────────────── */
 .mode-toggle {
   display: flex;
-  background: var(--bg);
-  border: 1px solid var(--border-mid);
+  background: rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.18);
   border-radius: 20px;
   padding: 2px;
   gap: 2px;
@@ -109,7 +137,7 @@ header {
   border-radius: 18px;
   border: none;
   background: transparent;
-  color: var(--text-3);
+  color: rgba(255,255,255,0.55);
   font-family: var(--sans);
   font-size: 12px;
   font-weight: 600;
@@ -117,34 +145,34 @@ header {
   transition: all 0.2s;
 }
 
-.mode-btn:hover { color: var(--text-2); }
+.mode-btn:hover { color: rgba(255,255,255,0.85); }
 
 .mode-btn.active {
-  background: var(--bg-surface);
-  color: var(--text);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  background: rgba(255,255,255,0.18);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
 }
 
 .mode-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--text-3);
+  background: rgba(255,255,255,0.4);
   transition: all 0.3s;
 }
 
 .mode-dot.connected {
-  background: var(--ok);
-  box-shadow: 0 0 6px rgba(5,150,105,0.4);
+  background: #4ade80;
+  box-shadow: 0 0 6px rgba(74,222,128,0.5);
 }
 
-/* ── Stats ─────────────────────────────────────────────────── */
+/* ── Stats (on dark header) ────────────────────────────────── */
 .live-stats { display: flex; align-items: center; gap: 6px; }
 
 .stat-label {
   font-size: 10px;
   font-weight: 600;
-  color: var(--text-3);
+  color: rgba(255,255,255,0.50);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -153,16 +181,16 @@ header {
   font-family: var(--mono);
   font-size: 13px;
   font-weight: 700;
-  color: var(--gateway);
+  color: var(--rnli-orange);
 }
 
 .step-counter {
   font-family: var(--mono);
   font-size: 12px;
-  color: var(--text-3);
+  color: rgba(255,255,255,0.50);
 }
 
-.step-counter span { color: var(--text-2); font-weight: 600; }
+.step-counter span { color: rgba(255,255,255,0.85); font-weight: 600; }
 
 /* ── Main ──────────────────────────────────────────────────── */
 main {
@@ -807,7 +835,7 @@ footer {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: var(--gateway);
+  background: var(--rnli-orange);
   border: none;
   color: #fff;
 }
@@ -864,7 +892,7 @@ footer {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--gateway);
+  background: var(--rnli-orange);
   cursor: pointer;
 }
 
@@ -888,7 +916,7 @@ footer {
 .progress-fill {
   height: 100%;
   width: 0%;
-  background: var(--gateway);
+  background: var(--rnli-orange);
   border-radius: 2px;
   transition: width 0.3s;
 }

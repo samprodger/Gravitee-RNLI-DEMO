@@ -219,6 +219,13 @@ body::before {
 
 .hero-content { max-width: 620px; flex: 1; }
 
+.hero-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
 .hero-badge {
   display: inline-block;
   background: rgba(242, 136, 0, 0.15);
@@ -230,7 +237,13 @@ body::before {
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  margin-bottom: 20px;
+  margin-bottom: 0;
+}
+
+.hero-badge-secure {
+  background: rgba(74, 222, 128, 0.12);
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.3);
 }
 
 .hero-title {
@@ -1370,3 +1383,140 @@ body::before {
   background: #e0e8ff;
   border-color: #3a5a9a;
 }
+
+/* ── Record Visit form (Gold members) ──────────────────────── */
+.visit-form-bubble {
+  background: var(--rnli-gold-light, #fffbe6);
+  border: 1.5px solid var(--rnli-gold-border, rgba(242,136,0,0.35));
+  border-radius: 12px 12px 12px 4px;
+  padding: 16px;
+  margin: 8px 0;
+  width: 100%;
+}
+
+.visit-form-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--rnli-navy, #002663);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.visit-form-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.visit-form-fields label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--rnli-navy, #002663);
+  margin-bottom: 2px;
+  display: block;
+}
+
+.visit-form-fields input,
+.visit-form-fields textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(0,38,99,0.2);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  background: #fff;
+  color: var(--rnli-navy, #002663);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.visit-form-fields input:focus,
+.visit-form-fields textarea:focus {
+  border-color: var(--rnli-orange, #f28800);
+}
+
+.visit-form-fields textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.visit-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.btn-visit-save {
+  flex: 1;
+  background: var(--rnli-orange, #f28800);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-visit-save:hover { background: #d97700; }
+
+.btn-visit-cancel {
+  background: transparent;
+  color: var(--rnli-muted, #666);
+  border: 1px solid var(--rnli-border, #ddd);
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-visit-cancel:hover { background: #f5f5f5; }
+
+.visit-saved-notice {
+  background: rgba(74,222,128,0.12);
+  border: 1px solid rgba(74,222,128,0.35);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #1a6e38;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.quick-reply-btn.record-visit-reply {
+  background: rgba(242,136,0,0.1);
+  color: #7a4000;
+  border-color: rgba(242,136,0,0.4);
+}
+
+.quick-reply-btn.record-visit-reply:hover {
+  background: rgba(242,136,0,0.2);
+  border-color: #f28800;
+}
+
+/* Add visit button inside visited section */
+.add-visit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--rnli-orange, #f28800);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 12px;
+  transition: background 0.2s;
+}
+
+.add-visit-btn:hover { background: #d97700; }

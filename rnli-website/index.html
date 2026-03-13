@@ -104,7 +104,10 @@
     <!-- Hero Section -->
     <section class="hero">
         <div class="hero-content">
-            <div class="hero-badge">🚤 AI-Powered · Gravitee API Gateway</div>
+            <div class="hero-badge-row">
+                <div class="hero-badge">🚤 AI-Powered via Gravitee Gateway</div>
+                <div class="hero-badge hero-badge-secure">🔒 Secure by Default</div>
+            </div>
             <h1 class="hero-title">Find Your Nearest<br><span class="hero-highlight">RNLI Lifeboat Station</span></h1>
             <p class="hero-subtitle">
                 Ask our AI assistant to find RNLI lifeboat stations near any UK postcode or town.
@@ -238,6 +241,13 @@
                 </div>
                 <h2>Stations You've Visited</h2>
                 <p id="visitedSubtitle">Loading your visit history…</p>
+                <button class="add-visit-btn" id="addVisitBtn" onclick="openRecordVisitModal()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Log a Visit
+                </button>
             </div>
             <div id="visitedList" class="visited-list">
                 <div class="visited-loading">
@@ -427,6 +437,42 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="cancelSettingsBtn">Close</button>
                 <button class="btn btn-primary" id="saveSettingsBtn">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Record Visit Modal (Gold members only) -->
+    <div id="recordVisitModal" class="modal hidden">
+        <div class="modal-overlay" id="recordVisitOverlay"></div>
+        <div class="modal-content" style="max-width:460px">
+            <div class="modal-header">
+                <h2>📍 Log a Station Visit</h2>
+                <button class="icon-btn" id="closeRecordVisitBtn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:13px;color:var(--rnli-muted);margin-bottom:18px;">Record your visit to an RNLI lifeboat station. This is saved privately on your device and shared with the AI assistant.</p>
+                <div class="form-group">
+                    <label for="visitStation">Station Name</label>
+                    <input type="text" id="visitStation" class="form-input" placeholder="e.g. Poole Lifeboat Station">
+                </div>
+                <div class="form-group">
+                    <label for="visitDate">Date of Visit</label>
+                    <input type="date" id="visitDate" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label for="visitNotes">Notes (optional)</label>
+                    <textarea id="visitNotes" class="form-input" rows="3" placeholder="What did you see? Any crew you met? Memorable moments..." style="resize:vertical"></textarea>
+                </div>
+                <div id="recordVisitError" style="display:none;color:#c00;font-size:12px;margin-top:4px;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancelRecordVisitBtn">Cancel</button>
+                <button class="btn btn-primary" id="saveRecordVisitBtn">Save Visit</button>
             </div>
         </div>
     </div>

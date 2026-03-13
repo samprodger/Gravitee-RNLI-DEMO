@@ -937,7 +937,7 @@ function updateQuickRepliesForUser() {
                 <button class="quick-reply-btn gold-reply" onclick="sendFromQuickReply('When did I visit Poole lifeboat station?')">🗓 My Poole visit</button>
                 <button class="quick-reply-btn gold-reply" onclick="sendFromQuickReply('What was my most recent lifeboat station visit?')">📍 Last visit</button>
                 <button class="quick-reply-btn" onclick="sendFromQuickReply('Find nearest stations to Poole')">Near Poole</button>
-                <button class="quick-reply-btn" onclick="sendFromQuickReply('Tell me about Tower lifeboat station')">Tower Station</button>
+                <button class="quick-reply-btn record-visit-reply" onclick="openRecordVisitModal()">✏️ Log a Visit</button>
             `;
         } else {
             els.quickReplies.innerHTML = `
@@ -998,7 +998,13 @@ async function fetchVisitedStations() {
         renderVisitedStations(data);
     } catch (err) {
         console.error('[Auth] Visited stations fetch failed:', err);
-        renderVisitedError(`Could not load visit history: ${err.message}`);
+        // Fall back to locally stored visits if API is unavailable
+        const local = localStorage.getItem('rnli_visit_history');
+        if (local) {
+            renderLocalVisits();
+        } else {
+            renderVisitedError(`Could not load visit history: ${err.message}`);
+        }
     }
 }
 
@@ -1084,3 +1090,149 @@ function renderVisitedError(msg) {
         authEls.visitedList.innerHTML = `<div class="visited-auth-notice"><p>⚠️ ${msg}</p></div>`;
     }
 }
+
+// ---------------------------------------------------------------------------
+// Record Visit — Gold member feature
+// Save a visit to localStorage and refresh the visited stations display
+// ---------------------------------------------------------------------------
+
+function openRecordVisitModal() {
+    const modal = document.getElementById('recordVisitModal');
+    if (!modal) return;
+    // Pre-fill date to today
+    const dateInput = document.getElementById('visitDate');
+    if (dateInput && !dateInput.value) {
+        dateInput.value = new Date().toISOString().split('T')[0];
+    }
+    // Clear previous values
+    const stationInput = document.getElementById('visitStation');
+    const notesInput = document.getElementById('visitNotes');
+    const errorDiv = document.getElementById('recordVisitError');
+    if (stationInput) stationInput.value = '';
+    if (notesInput) notesInput.value = '';
+    if (errorDiv) { errorDiv.style.display = 'none'; errorDiv.textContent = ''; }
+
+    modal.classList.remove('hidden');
+    setTimeout(() => stationInput?.focus(), 100);
+}
+
+function closeRecordVisitModal() {
+    document.getElementById('recordVisitModal')?.classList.add('hidden');
+}
+
+function saveRecordedVisit() {
+    const station = document.getElementById('visitStation')?.value?.trim();
+    const date    = document.getElementById('visitDate')?.value?.trim();
+    const notes   = document.getElementById('visitNotes')?.value?.trim();
+    const errorDiv = document.getElementById('recordVisitError');
+
+    if (!station) {
+        if (errorDiv) { errorDiv.textContent = 'Please enter a station name.'; errorDiv.style.display = 'block'; }
+        document.getElementById('visitStation')?.focus();
+        return;
+    }
+    if (!date) {
+        if (errorDiv) { errorDiv.textContent = 'Please enter a visit date.'; errorDiv.style.display = 'block'; }
+        document.getElementById('visitDate')?.focus();
+        return;
+    }
+
+    const visit = {
+        station,
+        date,
+        station_type: '',  // unknown — user-recorded
+        region: '',
+        notes: notes || '',
+    };
+
+    const existing = JSON.parse(localStorage.getItem('rnli_visit_history') || '[]');
+    existing.unshift(visit);   // newest first
+    localStorage.setItem('rnli_visit_history', JSON.stringify(existing));
+
+    closeRecordVisitModal();
+
+    // Refresh the on-page visited stations list
+    renderLocalVisits();
+
+    // Show a brief confirmation in the chat if it's open
+    if (!els.chatWindow?.classList.contains('hidden')) {
+        appendMessage('agent', `✅ Visit to **${station}** on ${new Date(date + 'T00:00:00').toLocaleDateString('en-GB', {day:'numeric', month:'long', year:'numeric'})} has been recorded! I'll remember this for our conversations.`);
+    }
+}
+
+/**
+ * Render the visited stations section purely from localStorage
+ * (used when a Gold user logs a visit manually without a server refresh).
+ */
+function renderLocalVisits() {
+    if (!authEls.visitedSection || !authEls.visitedList) return;
+    const plan = getUserPlan();
+    if (plan !== 'gold') return;
+
+    authEls.visitedSection.classList.remove('hidden');
+
+    const visits = JSON.parse(localStorage.getItem('rnli_visit_history') || '[]');
+
+    if (authEls.visitedSubtitle) {
+        const name = authConfig.userInfo?.given_name || 'you';
+        authEls.visitedSubtitle.innerHTML =
+            `Stations visited by <strong>${name}</strong>
+             &nbsp;·&nbsp;
+             <span class="jwt-badge">
+                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                 Secured by Gravitee AM
+             </span>
+             &nbsp;·&nbsp;
+             <span class="gold-plan-badge">⭐ Gold Plan</span>`;
+    }
+
+    if (visits.length === 0) {
+        authEls.visitedList.innerHTML = '<div class="visited-auth-notice"><p>No station visits recorded yet. Click <strong>Log a Visit</strong> to add your first check-in!</p></div>';
+        return;
+    }
+
+    authEls.visitedList.innerHTML = visits.map(v => {
+        const badgeClass = (v.station_type || '').toUpperCase() === 'ALB' ? 'alb' : 'ilb';
+        const typeBadge  = v.station_type || '';
+        const dateStr    = v.date ? new Date(v.date + 'T00:00:00').toLocaleDateString('en-GB', {day:'numeric', month:'long', year:'numeric'}) : '';
+        return `
+        <div class="visited-card">
+            <div class="visited-card-header">
+                <div class="visited-card-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                        <circle cx="12" cy="10" r="3"></circle>
+                    </svg>
+                </div>
+                <div>
+                    <div class="visited-card-title">${v.station}</div>
+                    <div class="visited-card-region">${v.region || ''}</div>
+                </div>
+                ${typeBadge ? `<span class="visited-card-badge ${badgeClass}">${typeBadge}</span>` : ''}
+            </div>
+            ${dateStr ? `<div class="visited-card-date">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+                Visited: ${dateStr}
+            </div>` : ''}
+            ${v.notes ? `<div class="visited-card-notes">${v.notes}</div>` : ''}
+        </div>`;
+    }).join('');
+}
+
+// Wire up the Record Visit modal buttons
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('closeRecordVisitBtn')?.addEventListener('click', closeRecordVisitModal);
+    document.getElementById('cancelRecordVisitBtn')?.addEventListener('click', closeRecordVisitModal);
+    document.getElementById('recordVisitOverlay')?.addEventListener('click', closeRecordVisitModal);
+    document.getElementById('saveRecordVisitBtn')?.addEventListener('click', saveRecordedVisit);
+
+    // Close on Escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeRecordVisitModal();
+    });
+});
