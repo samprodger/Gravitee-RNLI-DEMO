@@ -700,6 +700,7 @@ body::before {
   transition: background var(--transition), color var(--transition);
 }
 .icon-btn:hover { background: rgba(255, 255, 255, 0.22); color: var(--rnli-white); }
+.icon-btn-active { background: rgba(242, 136, 0, 0.3) !important; color: var(--rnli-orange) !important; }
 
 .chat-messages {
   flex: 1;

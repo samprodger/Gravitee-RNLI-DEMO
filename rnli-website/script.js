@@ -41,6 +41,7 @@ const els = {
     chatBadge:           document.getElementById('chatBadge'),
     chatWindow:          document.getElementById('chatWindow'),
     closeChatBtn:        document.getElementById('closeChatBtn'),
+    clearChatBtn:        document.getElementById('clearChatBtn'),
     toggleChatSizeBtn:   document.getElementById('toggleChatSizeBtn'),
     chatMessages:        document.getElementById('chatMessages'),
     chatInput:           document.getElementById('chatInput'),
@@ -106,6 +107,7 @@ function bindEvents() {
     // Chat widget toggle
     els.chatWidgetBtn?.addEventListener('click', toggleChat);
     els.closeChatBtn?.addEventListener('click', closeChat);
+    els.clearChatBtn?.addEventListener('click', clearChat);
     els.toggleChatSizeBtn?.addEventListener('click', toggleChatSize);
 
     // Send message
@@ -168,6 +170,36 @@ function toggleChatSize() {
         els.chatWindow?.classList.add('maximized');
     } else {
         els.chatWindow?.classList.remove('maximized');
+    }
+}
+
+function clearChat() {
+    // Reset conversation context so next message starts a fresh session
+    contextId = generateId();
+    welcomeMessagePersonalized = false;
+
+    // Remove all messages except the initial welcome
+    if (els.chatMessages) {
+        els.chatMessages.innerHTML = `
+            <div class="message agent-message">
+                <div class="message-avatar">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l3-6 3 4 3-8 3 6 3-4 3 6"></path><path d="M3 21h18"></path></svg>
+                </div>
+                <div class="message-content">
+                    <p>Chat cleared — fresh session started. How can I help you?</p>
+                </div>
+            </div>`;
+    }
+
+    // Brief visual flash on the reset button
+    els.clearChatBtn?.classList.add('icon-btn-active');
+    setTimeout(() => els.clearChatBtn?.classList.remove('icon-btn-active'), 400);
+
+    // Re-personalise if user is still logged in
+    if (authConfig.userInfo && authConfig.accessToken) {
+        const first = authConfig.userInfo.given_name || 'User';
+        personalizeChatWelcome(first);
+        welcomeMessagePersonalized = true;
     }
 }
 
