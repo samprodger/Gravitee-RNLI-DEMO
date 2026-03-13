@@ -273,18 +273,33 @@ class AMInitializer:
 
     def configure_application_settings(self, app_id: str, app_config: Dict[str, Any]) -> bool:
         scopes = app_config.get("scopes", [])
-        if not scopes:
+        skip_consent = app_config.get("skipConsent", False)
+        if not scopes and not skip_consent:
             return True
         url = f"{AM_BASE_URL}/management/organizations/{ORGANIZATION}/environments/{ENVIRONMENT}/domains/{self.domain_id}/applications/{app_id}"
-        scope_settings = [{"scope": s, "defaultScope": False, "scopeApproval": 300} for s in scopes]
-        payload = {"settings": {"oauth": {"scopeSettings": scope_settings}}}
+        # Build a minimal PUT payload — only the fields we want to change.
+        # Note: top-level read-only fields (id, domain, type, createdAt, etc.) must NOT be included.
+        # skipConsent lives under settings.advanced (not settings.oauth) in AM's data model.
+        settings: Dict[str, Any] = {}
+        if scopes:
+            settings["oauth"] = {
+                "scopeSettings": [
+                    {"scope": s, "defaultScope": False, "scopeApproval": 300} for s in scopes
+                ]
+            }
+        if skip_consent:
+            settings["advanced"] = {"skipConsent": True}
+        payload = {"settings": settings}
         try:
             r = self.session.put(url, json=payload, timeout=10)
             r.raise_for_status()
-            log(f"  ✓ Scopes configured: {scopes}")
+            if scopes:
+                log(f"  ✓ Scopes configured: {scopes}")
+            if skip_consent:
+                log(f"  ✓ skipConsent=true configured")
             return True
         except requests.exceptions.RequestException as e:
-            log(f"WARNING: Failed to configure scopes: {e}")
+            log(f"WARNING: Failed to configure app settings: {e}")
             return True  # non-fatal
 
     def add_identity_provider(self, app_id: str, app_name: str) -> bool:
@@ -580,8 +595,27 @@ class AMInitializer:
   </div>
 
   <!-- Login form -->
-  <form th:action="@{login}" method="post" autocomplete="off">
+  <!--
+    HYBRID APPROACH: OAuth2 params must reach AM's LoginFormHandler.
+    Gravitee AM checks request.params() which (in Vert.x) includes both the POST body fields
+    AND the URL query-string. Putting params in BOTH places ensures AM always finds client_id.
+
+    1. Query string: @{login(...)} Thymeleaf URL expression adds params to the POST URL:
+         POST /gravitee/login?client_id=rnli-lifeboat&response_type=code&...
+    2. POST body: hidden <input> fields send the same params in the request body as fallback.
+
+    After credential validation, AM redirects to /oauth/authorize carrying those params.
+  -->
+  <form th:action="@{login(client_id=${param.client_id},response_type=${param.response_type},redirect_uri=${param.redirect_uri},scope=${param.scope},state=${param.state},code_challenge=${param.code_challenge},code_challenge_method=${param.code_challenge_method})}" method="post" autocomplete="off">
     <input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" />
+    <!-- Also send OAuth2 params as POST body fields (hybrid: both query-string and body) -->
+    <input type="hidden" th:if="${param.client_id != null}" name="client_id" th:value="${param.client_id}" />
+    <input type="hidden" th:if="${param.response_type != null}" name="response_type" th:value="${param.response_type}" />
+    <input type="hidden" th:if="${param.redirect_uri != null}" name="redirect_uri" th:value="${param.redirect_uri}" />
+    <input type="hidden" th:if="${param.scope != null}" name="scope" th:value="${param.scope}" />
+    <input type="hidden" th:if="${param.state != null}" name="state" th:value="${param.state}" />
+    <input type="hidden" th:if="${param.code_challenge != null}" name="code_challenge" th:value="${param.code_challenge}" />
+    <input type="hidden" th:if="${param.code_challenge_method != null}" name="code_challenge_method" th:value="${param.code_challenge_method}" />
     <div class="field">
       <label for="username">Email or username</label>
       <input id="username" type="text" name="username" placeholder="joe.doe@gravitee.io" required autofocus />
@@ -673,6 +707,14 @@ class AMInitializer:
                 r = self.session.put(f"{url}/{existing_id}", json=put_payload, timeout=15)
             else:
                 r = self.session.post(url, json=post_payload, timeout=15)
+                # If POST fails with 400 "already exists", fall back to GET+PUT
+                if r.status_code == 400 and "already exists" in r.text:
+                    r2 = self.session.get(url, params={"template": "LOGIN"}, timeout=10)
+                    if r2.ok:
+                        fallback_id = (r2.json().get("id") if isinstance(r2.json(), dict)
+                                       else (r2.json()[0].get("id") if r2.json() else None))
+                        if fallback_id:
+                            r = self.session.put(f"{url}/{fallback_id}", json=put_payload, timeout=15)
             if r.ok:
                 action = "updated" if existing_id else "configured"
                 log(f"✓ Custom login form {action} with social buttons.")

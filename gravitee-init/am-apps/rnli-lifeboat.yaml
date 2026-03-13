@@ -16,3 +16,6 @@ scopes:
   - "openid"
   - "profile"
   - "email"
+
+# Skip the scope consent page — users are pre-approved in this demo
+skipConsent: true
