@@ -290,13 +290,19 @@ async function sendMessage(text) {
     setInputEnabled(false);
 
     try {
-        const response = await callAgent(text);
+        const { text: response, elapsedMs } = await callAgent(text);
         hideTypingIndicator();
-        appendMessage('agent', response);
+        appendMessage('agent', response, { elapsedMs });
     } catch (err) {
         hideTypingIndicator();
         console.error('[RNLI Agent] Error:', err);
-        appendMessage('agent', 'Sorry, I encountered an error. Please try again in a moment.');
+        if (err.type === 'guard-rails') {
+            appendGuardRailsBlock();
+        } else if (err.type === 'rate-limit') {
+            appendRateLimitMessage();
+        } else {
+            appendMessage('agent', 'Sorry, I encountered an error. Please try again in a moment.');
+        }
     } finally {
         isTyping = false;
         setInputEnabled(true);
@@ -348,11 +354,32 @@ async function callAgent(userMessage) {
         },
     };
 
+    const startTime = Date.now();
     const resp = await fetch(config.agentUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
     });
+    const elapsedMs = Date.now() - startTime;
+
+    // 400 → likely guard rails block
+    if (resp.status === 400) {
+        let body = '';
+        try { body = await resp.text(); } catch (_) {}
+        const err = new Error('guard-rails-block');
+        err.type = 'guard-rails';
+        err.body = body;
+        err.elapsedMs = elapsedMs;
+        throw err;
+    }
+
+    // 429 → rate limit hit
+    if (resp.status === 429) {
+        const err = new Error('rate-limit');
+        err.type = 'rate-limit';
+        err.elapsedMs = elapsedMs;
+        throw err;
+    }
 
     if (!resp.ok) {
         throw new Error(`Agent returned HTTP ${resp.status}`);
@@ -364,7 +391,7 @@ async function callAgent(userMessage) {
         throw new Error(data.error.message || JSON.stringify(data.error));
     }
 
-    return extractTextFromResult(data.result);
+    return { text: extractTextFromResult(data.result), elapsedMs };
 }
 
 function extractTextFromResult(result) {
@@ -405,7 +432,7 @@ function extractTextFromResult(result) {
 // UI helpers
 // ---------------------------------------------------------------------------
 
-function appendMessage(role, text) {
+function appendMessage(role, text, meta = {}) {
     const wrapper = document.createElement('div');
     wrapper.className = `message ${role === 'user' ? 'user-message' : 'agent-message'}`;
 
@@ -420,6 +447,69 @@ function appendMessage(role, text) {
     const content = document.createElement('div');
     content.className = 'message-content';
     content.innerHTML = formatMessageText(text);
+
+    wrapper.appendChild(avatar);
+    wrapper.appendChild(content);
+
+    // Timing chip — shown on agent responses when elapsed time is available
+    if (role === 'agent' && meta.elapsedMs != null) {
+        const isFast = meta.elapsedMs < 500;
+        const timeStr = meta.elapsedMs < 1000
+            ? `${meta.elapsedMs}ms`
+            : `${(meta.elapsedMs / 1000).toFixed(1)}s`;
+        const chip = document.createElement('div');
+        chip.className = 'response-timing';
+        chip.innerHTML = `<span class="timing-chip${isFast ? ' timing-fast' : ''}">${isFast ? '⚡ Cache hit · ' : ''}${timeStr}</span>`;
+        wrapper.appendChild(chip);
+    }
+
+    els.chatMessages?.appendChild(wrapper);
+    scrollToBottom();
+}
+
+// Guard rails blocked — styled inline message
+function appendGuardRailsBlock() {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message agent-message';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'message-avatar guard-rails-avatar';
+    avatar.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>`;
+
+    const content = document.createElement('div');
+    content.className = 'message-content guard-rails-content';
+    content.innerHTML = `
+        <p><strong>Request blocked by Gravitee AI Guard Rails</strong></p>
+        <p>Your message was flagged by the content safety policy and was not forwarded to the AI. Gravitee Gateway is protecting the API in real time.</p>
+        <p class="guard-rails-hint">Try asking about RNLI lifeboat stations instead.</p>`;
+
+    wrapper.appendChild(avatar);
+    wrapper.appendChild(content);
+    els.chatMessages?.appendChild(wrapper);
+    scrollToBottom();
+}
+
+// Rate limit hit — styled inline message
+function appendRateLimitMessage() {
+    const plan = getUserPlan();
+    const isGold = plan === 'gold';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message agent-message';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'message-avatar';
+    avatar.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
+
+    const content = document.createElement('div');
+    content.className = 'message-content rate-limit-content';
+    const upgradeHint = !isGold
+        ? '<p class="rate-limit-hint">Gold members get higher rate limits — sign in with a Gold account to continue.</p>'
+        : '<p class="rate-limit-hint">Please wait a moment before sending another request.</p>';
+    content.innerHTML = `
+        <p><strong>Rate limit reached</strong></p>
+        <p>Gravitee Gateway is enforcing the request quota for your plan (${plan || 'guest'}).</p>
+        ${upgradeHint}`;
 
     wrapper.appendChild(avatar);
     wrapper.appendChild(content);

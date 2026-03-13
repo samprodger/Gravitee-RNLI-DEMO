@@ -957,6 +957,26 @@ footer {
   margin-bottom: 8px;
 }
 
+/* ── Waiting hint pills (demo mode) ───────────────────────── */
+.waiting-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.wh-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: rgba(242, 136, 0, 0.12);
+  color: var(--rnli-orange);
+  border: 1px solid rgba(242, 136, 0, 0.28);
+  letter-spacing: 0.02em;
+}
+
 /* ── Waiting option cards ──────────────────────────────────── */
 .waiting-options {
   display: flex;

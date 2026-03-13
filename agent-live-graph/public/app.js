@@ -739,18 +739,18 @@
    * ════════════════════════════════════════════════════════════ */
 
   const SCENARIO = [
-    /* ── Phase 1 — User Request ── */
+    /* ── Phase 1 — User Request (Gold plan, authenticated) ── */
     { type: 'divider', label: 'Phase 1 — User Request' },
     {
       type: 'arrow', from: 'client', to: 'gateway',
       label: 'POST /stations-agent/',
-      message: { lane: 'gateway', text: 'Which RNLI stations are in Scotland?' },
-      policies: [], plan: 'Keyless',
+      message: { lane: 'gateway', text: 'Find me the nearest RNLI stations to Poole in Dorset' },
+      policies: [], plan: 'Gold',
     },
     {
       type: 'arrow', from: 'gateway', to: 'agent',
-      label: 'Forwarded',
-      message: { lane: 'agent', text: 'Processing request' },
+      label: 'Authenticated & forwarded',
+      message: { lane: 'agent', text: 'Processing request (Gold plan)' },
     },
 
     /* ── Phase 2 — Tool Discovery ── */
@@ -759,13 +759,13 @@
       type: 'arrow', from: 'agent', to: 'gateway',
       label: 'POST /lifeboat-mcp',
       message: { lane: 'gateway', text: 'MCP tools/list request' },
-      policies: [], plan: 'Keyless',
+      policies: [], plan: 'Gold',
     },
     {
       type: 'arrow', from: 'gateway', to: 'agent',
-      label: '200 — 12ms',
+      label: '200 — 11ms',
       message: { lane: 'agent', text: '2 tools discovered', toolList: ['listStationsByRegion', 'findNearestStations'] },
-      badge: { type: 'ok', text: '12ms / 3ms gw' },
+      badge: { type: 'ok', text: '11ms / 3ms gw' },
     },
 
     /* ── Phase 3 — LLM Decision ── */
@@ -777,7 +777,7 @@
       policies: [
         { name: 'AI Guardrails', passed: true },
         { name: 'Token Rate Limit', passed: true },
-      ], plan: 'Keyless',
+      ], plan: 'Gold',
     },
     {
       type: 'arrow', from: 'gateway', to: 'llm',
@@ -787,13 +787,13 @@
     {
       type: 'arrow', from: 'llm', to: 'gateway',
       label: '200',
-      message: { lane: 'gateway', text: 'Call listStationsByRegion' },
+      message: { lane: 'gateway', text: 'Call findNearestStations' },
     },
     {
       type: 'arrow', from: 'gateway', to: 'agent',
-      label: '200 — 320ms',
-      message: { lane: 'agent', text: 'Call listStationsByRegion' },
-      badge: { type: 'ok', text: '320ms / 850 tokens / 8ms gw' },
+      label: '200 — 310ms',
+      message: { lane: 'agent', text: 'Call findNearestStations' },
+      badge: { type: 'ok', text: '310ms / 820 tokens / 7ms gw' },
     },
 
     /* ── Phase 4 — Tool Execution ── */
@@ -801,24 +801,24 @@
     {
       type: 'arrow', from: 'agent', to: 'gateway',
       label: 'POST /lifeboat-mcp',
-      message: { lane: 'gateway', text: 'MCP tools/call — listStationsByRegion', toolCall: { name: 'listStationsByRegion', args: { region: 'Scotland' } } },
-      policies: [], plan: 'Keyless',
+      message: { lane: 'gateway', text: 'MCP tools/call — findNearestStations', toolCall: { name: 'findNearestStations', args: { location: 'Poole, Dorset', limit: 5 } } },
+      policies: [], plan: 'Gold',
     },
     {
       type: 'arrow', from: 'gateway', to: 'api',
-      label: 'GET /stations?region=Scotland',
-      message: { lane: 'api', text: 'List Stations by Region' },
+      label: 'GET /stations/nearest?location=Poole',
+      message: { lane: 'api', text: 'Find nearest stations' },
     },
     {
       type: 'arrow', from: 'api', to: 'gateway',
       label: '200',
-      message: { lane: 'gateway', text: '4 stations returned' },
+      message: { lane: 'gateway', text: '5 stations returned' },
     },
     {
       type: 'arrow', from: 'gateway', to: 'agent',
-      label: '200 — 45ms',
-      message: { lane: 'agent', text: '4 stations returned' },
-      badge: { type: 'ok', text: '45ms / 6ms gw' },
+      label: '200 — 38ms',
+      message: { lane: 'agent', text: '5 nearest stations returned' },
+      badge: { type: 'ok', text: '38ms / 5ms gw' },
     },
 
     /* ── Phase 5 — Format Response ── */
@@ -830,7 +830,8 @@
       policies: [
         { name: 'AI Guardrails', passed: true },
         { name: 'Token Rate Limit', passed: true },
-      ], plan: 'Keyless',
+        { name: 'Cache', passed: true },
+      ], plan: 'Gold',
     },
     {
       type: 'arrow', from: 'gateway', to: 'llm',
@@ -840,13 +841,13 @@
     {
       type: 'arrow', from: 'llm', to: 'gateway',
       label: '200',
-      message: { lane: 'gateway', text: 'Text response — 140 tokens' },
+      message: { lane: 'gateway', text: 'Text response — 158 tokens' },
     },
     {
       type: 'arrow', from: 'gateway', to: 'agent',
-      label: '200 — 280ms',
-      message: { lane: 'agent', text: 'Text response — 140 tokens' },
-      badge: { type: 'ok', text: '280ms / 140 tokens / 5ms gw' },
+      label: '200 — 295ms',
+      message: { lane: 'agent', text: 'Text response — 158 tokens' },
+      badge: { type: 'ok', text: '295ms / 158 tokens / 6ms gw' },
     },
 
     /* ── Phase 6 — Response Delivered ── */
@@ -858,9 +859,9 @@
     },
     {
       type: 'arrow', from: 'gateway', to: 'client',
-      label: '200 — 2100ms',
-      message: { lane: 'client', text: 'Response delivered' },
-      badge: { type: 'ok', text: '2100ms total' },
+      label: '200 — 1.9s total',
+      message: { lane: 'client', text: 'Response delivered to user' },
+      badge: { type: 'ok', text: '1.9s total / Gold plan' },
     },
   ];
 
@@ -925,8 +926,13 @@
     w.innerHTML = `
       <img src="assets/gravitee-mark.svg" class="waiting-logo" alt="Gravitee" />
       <p>Press Play to start the demo</p>
-      <small>Watch how a request flows through the AI Agent stack,<br/>
-      with Gravitee Gateway securing and observing every step.</small>`;
+      <small>Watch a Gold-plan user ask "Find me the nearest RNLI stations to Poole" — and see every hop through the Gravitee Gateway.</small>
+      <div class="waiting-hints">
+        <span class="wh-pill">AI Guard Rails</span>
+        <span class="wh-pill">Token Rate Limit</span>
+        <span class="wh-pill">Response Cache</span>
+        <span class="wh-pill">MCP Tool Calls</span>
+      </div>`;
     stepsEl.appendChild(w);
   }
 
