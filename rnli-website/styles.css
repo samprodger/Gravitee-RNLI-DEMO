@@ -511,6 +511,91 @@ body::before {
 /* -----------------------------------------------------------------------
    About section
 ----------------------------------------------------------------------- */
+/* ── A2A Agent Mesh section ──────────────────────────────── */
+.agent-mesh-section { padding: 80px 24px; background: var(--rnli-light); }
+
+.agent-mesh-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 24px;
+  margin-top: 40px;
+}
+
+.agent-mesh-loading { color: var(--rnli-slate); font-size: 14px; padding: 20px 0; }
+
+.agent-card-tile {
+  background: var(--rnli-white);
+  border: 1.5px solid var(--rnli-border);
+  border-top: 3px solid var(--agent-colour, #002663);
+  border-radius: 12px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.agent-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.agent-card-icon { font-size: 28px; line-height: 1; flex-shrink: 0; margin-top: 2px; }
+
+.agent-card-role {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--agent-colour, #002663);
+  margin-bottom: 2px;
+}
+
+.agent-card-name { font-size: 15px; font-weight: 700; color: var(--rnli-navy); line-height: 1.2; }
+
+.agent-card-badge {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.badge-live    { background: #ECFDF5; color: #059669; border: 1px solid rgba(5,150,105,0.2); }
+.badge-offline { background: #FEF2F2; color: #DC2626; border: 1px solid rgba(220,38,38,0.2); }
+
+.agent-card-desc { font-size: 13px; color: var(--rnli-slate); line-height: 1.5; margin: 0; }
+
+.agent-card-meta { display: flex; flex-direction: column; gap: 6px; }
+
+.agent-meta-row { display: flex; gap: 8px; font-size: 12px; }
+.agent-meta-label { font-weight: 600; color: var(--rnli-navy); min-width: 72px; flex-shrink: 0; }
+.agent-meta-val { color: var(--rnli-slate); }
+
+.agent-skills { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.agent-skill-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: rgba(0,38,99,0.06);
+  color: var(--rnli-navy);
+  border: 1px solid var(--rnli-border);
+}
+
+.agent-card-link {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--agent-colour, #002663);
+  text-decoration: none;
+  margin-top: auto;
+}
+.agent-card-link:hover { text-decoration: underline; }
+
 .about { padding: 80px 24px; background: var(--rnli-white); }
 
 .about-grid {
@@ -628,7 +713,7 @@ body::before {
   bottom: 100px;
   right: 28px;
   z-index: 890;
-  width: 380px;
+  width: 440px;
   max-height: 600px;
   background: var(--rnli-white);
   border-radius: var(--radius-lg);
@@ -2027,4 +2112,121 @@ body::before {
     color: #64748b;
     line-height: 1.55;
     margin: 0 0 20px;
+}
+
+/* -----------------------------------------------------------------------
+   Station Map Panel
+----------------------------------------------------------------------- */
+.map-panel {
+  position: fixed;
+  bottom: 100px;
+  right: 476px; /* 28px chat margin + 440px chat width + 8px gap */
+  z-index: 889;
+  width: 380px;
+  height: 490px;
+  background: var(--rnli-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  border: 1.5px solid var(--rnli-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUp 0.22s ease;
+}
+
+/* Maximized chat: wider chat (600px) so map shifts left */
+.map-panel.map-panel-maximized {
+  right: 636px; /* 28px + 600px + 8px */
+  bottom: 28px;
+  height: min(490px, 80vh);
+}
+
+.map-panel-header {
+  background: var(--rnli-navy);
+  color: var(--rnli-white);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  border-bottom: 3px solid var(--rnli-orange);
+}
+
+.map-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.map-container {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+}
+
+/* Map toggle button in chat header — highlight when map is visible */
+.map-toggle-btn {
+  position: relative;
+}
+.map-toggle-btn.active {
+  background: rgba(242, 136, 0, 0.2) !important;
+  color: var(--rnli-orange) !important;
+}
+
+/* Leaflet popup overrides — match RNLI style */
+.leaflet-popup-content-wrapper {
+  border-radius: 8px !important;
+  box-shadow: 0 4px 16px rgba(0, 38, 99, 0.18) !important;
+  border: 1.5px solid var(--rnli-border) !important;
+  padding: 0 !important;
+}
+.leaflet-popup-content {
+  margin: 12px 14px !important;
+}
+.leaflet-popup-tip-container {
+  margin-top: -1px !important;
+}
+
+/* Permanent station name/distance tooltips */
+/* Numbered map marker */
+.rnli-marker-icon { background: transparent !important; border: none !important; }
+.rnli-marker-num {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: #f28800;
+  border: 2.5px solid #002663;
+  display: flex; align-items: center; justify-content: center;
+  font-family: Inter, sans-serif;
+  font-weight: 700; font-size: 11px; color: #002663; line-height: 1;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+/* Weather forecast point marker */
+.rnli-marker-weather {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: #0891B2;
+  border: 2.5px solid #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; line-height: 1;
+  box-shadow: 0 1px 6px rgba(8,145,178,0.45);
+}
+
+.station-label {
+  background: white !important;
+  border: 1px solid var(--rnli-border) !important;
+  border-radius: 4px !important;
+  box-shadow: 0 1px 4px rgba(0, 38, 99, 0.15) !important;
+  padding: 2px 6px !important;
+  white-space: nowrap !important;
+}
+.station-label::before {
+  display: none !important;
+}
+
+@media (max-width: 900px) {
+  .map-panel {
+    display: none; /* hide on small screens — chat takes full width */
+  }
 }

@@ -1,0 +1,104 @@
+{
+  "api": {
+    "name": "Kafka HTTP Proxy",
+    "apiVersion": "1.0",
+    "definitionVersion": "V4",
+    "type": "PROXY",
+    "description": "Exposes Redpanda's HTTP Proxy (pandaproxy) through the Gravitee gateway. Produce records to any Kafka topic via POST, or consume via GET — all governed by Gravitee rate limits and auth policies. Use this to push events or pull from rnli.sea-conditions and rnli.tides.\n\nProduce:  POST /kafka-proxy/topics/{topic}\nConsume:  GET  /kafka-proxy/topics/{topic}/partitions/0/records?offset=0&count=10",
+    "tags": [],
+    "listeners": [
+      {
+        "type": "HTTP",
+        "paths": [
+          { "path": "/kafka-proxy/" }
+        ],
+        "entrypoints": [
+          { "type": "http-proxy" }
+        ],
+        "cors": {
+          "enabled": true,
+          "allowOrigin": ["*"],
+          "allowMethods": ["GET","POST","PUT","DELETE","OPTIONS","PATCH"],
+          "allowHeaders": ["Content-Type","Authorization","Accept","Origin","X-Requested-With"],
+          "exposeHeaders": [],
+          "allowCredentials": false,
+          "maxAge": 86400,
+          "runPolicies": false
+        }
+      }
+    ],
+    "endpointGroups": [
+      {
+        "name": "redpanda-http-proxy",
+        "type": "http-proxy",
+        "sharedConfiguration": "{\"proxy\":{\"useSystemProxy\":false,\"enabled\":false},\"http\":{\"keepAliveTimeout\":30000,\"keepAlive\":true,\"propagateClientHost\":false,\"followRedirects\":false,\"readTimeout\":30000,\"idleTimeout\":0,\"connectTimeout\":5000,\"useCompression\":true,\"maxConcurrentConnections\":20,\"version\":\"HTTP_1_1\",\"pipelining\":false},\"ssl\":{\"keyStore\":{\"type\":\"\"},\"hostnameVerifier\":true,\"trustStore\":{\"type\":\"\"},\"trustAll\":false}}",
+        "endpoints": [
+          {
+            "name": "redpanda-pandaproxy",
+            "type": "http-proxy",
+            "weight": 1,
+            "inheritConfiguration": true,
+            "configuration": {
+              "target": "http://redpanda:8082"
+            }
+          }
+        ]
+      }
+    ],
+    "analytics": {
+      "enabled": true,
+      "logging": {
+        "content": {
+          "headers": true,
+          "messageHeaders": false,
+          "payload": true,
+          "messagePayload": false,
+          "messageMetadata": false
+        },
+        "phase": { "request": true, "response": true },
+        "mode": { "endpoint": true, "entrypoint": true }
+      },
+      "tracing": { "enabled": false, "verbose": false }
+    },
+    "flowExecution": {
+      "mode": "DEFAULT",
+      "matchRequired": false
+    },
+    "flows": [
+      {
+        "name": "Rate limit — 60 req/min",
+        "enabled": true,
+        "selectors": [
+          {
+            "type": "HTTP",
+            "path": "/",
+            "pathOperator": "STARTS_WITH",
+            "methods": ["GET","POST","PUT","DELETE","OPTIONS","PATCH","HEAD","CONNECT","TRACE"]
+          }
+        ],
+        "request": [
+          {
+            "policy": "rate-limit",
+            "enabled": true,
+            "configuration": {
+              "rate": {
+                "limit": 60,
+                "periodTime": 1,
+                "periodTimeUnit": "MINUTES"
+              }
+            }
+          }
+        ],
+        "response": []
+      }
+    ],
+    "plans": [
+      {
+        "name": "Default",
+        "status": "PUBLISHED",
+        "security": { "type": "KEY_LESS" },
+        "flows": []
+      }
+    ]
+  }
+}

@@ -54,6 +54,7 @@
       <label class="scenario-label">Scenario</label>
       <select id="scenarioSelect" class="scenario-select">
         <option value="happy">Happy path — Gold plan / Poole</option>
+        <option value="a2a">A2A Agent Mesh — sea conditions via Agent 2</option>
         <option value="guardrails">Guard Rails — blocked request</option>
         <option value="cache">Cache hit — same query, 6x faster</option>
         <option value="ratelimit">Rate limit — Silver plan quota exceeded</option>
@@ -85,20 +86,21 @@
           <i class="ph ph-app-window" style="font-size:24px"></i>
         </div>
         <span class="lane-name">Client</span>
-        <span class="lane-sub">Request the Agent</span>
+        <span class="lane-sub">Website / App</span>
       </div>
       <div class="lane-header" data-lane="agent">
         <div class="lane-icon icon-agent">
           <i class="ph ph-robot" style="font-size:24px"></i>
         </div>
-        <span class="lane-name">RNLI Agent</span>
-        <span class="lane-sub">Orchestrate</span>
+        <span class="lane-name">Station Finder</span>
+        <span class="lane-sub">Agent 1</span>
       </div>
       <div class="lane-header" data-lane="gateway">
         <div class="lane-icon icon-gateway">
           <img src="assets/gravitee-mark.svg" alt="Gravitee" width="26" height="26"/>
         </div>
         <span class="lane-name">Gravitee Gateway</span>
+        <span class="lane-sub">AI Agent Mesh</span>
       </div>
       <div class="lane-header" data-lane="llm">
         <div class="lane-icon icon-llm">
@@ -113,6 +115,13 @@
         </div>
         <span class="lane-name">Lifeboat API</span>
         <span class="lane-sub">Station Data</span>
+      </div>
+      <div class="lane-header" data-lane="weather">
+        <div class="lane-icon icon-weather">
+          <i class="ph ph-waves" style="font-size:24px"></i>
+        </div>
+        <span class="lane-name">Sea Conditions</span>
+        <span class="lane-sub">Agent 2</span>
       </div>
     </div>
 

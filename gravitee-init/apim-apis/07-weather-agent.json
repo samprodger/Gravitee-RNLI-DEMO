@@ -1,0 +1,77 @@
+{
+  "api": {
+    "name": "RNLI Sea Conditions Agent",
+    "apiVersion": "1.0",
+    "definitionVersion": "V4",
+    "type": "PROXY",
+    "description": "A2A-compliant agent returning sea conditions (wave height, swell, wind, visibility) and tidal events (high/low water times and heights) for UK coastal locations. Called by the RNLI Station Finder agent to demonstrate agent-to-agent communication through the Gravitee AI Agent Mesh.",
+    "tags": [],
+    "listeners": [
+      {
+        "type": "HTTP",
+        "paths": [
+          { "path": "/weather-agent/" }
+        ],
+        "entrypoints": [
+          { "type": "http-proxy" }
+        ],
+        "cors": {
+          "enabled": true,
+          "allowOrigin": ["*"],
+          "allowMethods": ["GET","POST","PUT","DELETE","OPTIONS","PATCH"],
+          "allowHeaders": ["Content-Type","Authorization","Accept","Origin","X-Requested-With"],
+          "exposeHeaders": [],
+          "allowCredentials": false,
+          "maxAge": 86400,
+          "runPolicies": false
+        }
+      }
+    ],
+    "endpointGroups": [
+      {
+        "name": "default-group",
+        "type": "http-proxy",
+        "sharedConfiguration": "{\"proxy\":{\"useSystemProxy\":false,\"enabled\":false},\"http\":{\"keepAliveTimeout\":30000,\"keepAlive\":true,\"propagateClientHost\":false,\"followRedirects\":false,\"readTimeout\":60000,\"idleTimeout\":0,\"connectTimeout\":5000,\"useCompression\":true,\"maxConcurrentConnections\":20,\"version\":\"HTTP_1_1\",\"pipelining\":false},\"ssl\":{\"keyStore\":{\"type\":\"\"},\"hostnameVerifier\":true,\"trustStore\":{\"type\":\"\"},\"trustAll\":false}}",
+        "endpoints": [
+          {
+            "name": "rnli-weather-agent",
+            "type": "http-proxy",
+            "weight": 1,
+            "inheritConfiguration": true,
+            "configuration": {
+              "target": "http://rnli-weather-agent:8001"
+            }
+          }
+        ]
+      }
+    ],
+    "analytics": {
+      "enabled": true,
+      "logging": {
+        "content": {
+          "headers": true,
+          "messageHeaders": false,
+          "payload": true,
+          "messagePayload": false,
+          "messageMetadata": false
+        },
+        "phase": { "request": true, "response": true },
+        "mode": { "endpoint": true, "entrypoint": true }
+      },
+      "tracing": { "enabled": false, "verbose": false }
+    },
+    "flowExecution": {
+      "mode": "DEFAULT",
+      "matchRequired": false
+    },
+    "flows": [],
+    "plans": [
+      {
+        "name": "Free Plan",
+        "status": "PUBLISHED",
+        "security": { "type": "KEY_LESS" },
+        "flows": []
+      }
+    ]
+  }
+}

@@ -195,34 +195,69 @@ function classify(evt) {
   const d     = { m, s, gw, tot, reqB, edReq, resB, eRes };
 
   if (uri.startsWith('/stations-agent'))                    return fAgent(evt, d);
+  if (uri.startsWith('/weather-agent'))                     return fWeatherAgent(evt, d);
   if (uri.startsWith('/llm-proxy') || api.includes('LLM')) return fLLM(evt, d);
   if (uri.startsWith('/lifeboat-mcp'))                      return fMCP(evt, d, 'Keyless');
   return fOther(evt, d);
 }
 
-/* ── /stations-agent/ — User <-> Agent ───────────────────── */
+/* ── /stations-agent/ — wrapper event, rendered by flushBuffer ──────
+ * Returns [] so processEvent skips adding its steps to allSteps directly.
+ * The entry is still buffered (isAgent=true) and flushBuffer builds the
+ * User Request + Agent Response wrapper arrows around all inner events.
+ * ─────────────────────────────────────────────────────────────────── */
 function fAgent(evt, d) {
-  const userText  = parseUserRequest(d.reqB) || parseUserRequest(d.edReq);
+  return [];   // steps built by flushBuffer, not here
+}
+
+/* ── /weather-agent/ — A2A agent-to-agent call ───────────── */
+function fWeatherAgent(evt, d) {
+  // Parse the A2A JSON-RPC payload to extract method + message text
+  const reqJson   = tryJSON(d.reqB || d.edReq || '');
+  const a2aMethod = (reqJson && reqJson.method) || 'message/send';
+  const msgText   = (reqJson && reqJson.params && reqJson.params.message &&
+                     reqJson.params.message.parts &&
+                     reqJson.params.message.parts[0] &&
+                     reqJson.params.message.parts[0].text) || null;
+
   const agentText = parseAgentResponse(d.eRes) || parseAgentResponse(d.resB);
-  const reqBody   = d.reqB || d.edReq || null;
-  const resBody   = d.eRes || d.resB || null;
+  const s   = d.s || 0;
+  const tot = d.tot || 0;
   return [
-    { type: 'divider', label: 'User Request' },
+    { type: 'divider', label: '🤝 A2A — Agent to Agent Call', a2a: true },
     {
       type: 'arrow', from: 'agent', to: 'gateway',
-      label: `${d.m} ${evt.uri}`,
+      label: `A2A: ${a2aMethod}`,
       message: {
         lane: 'gateway',
-        text: userText ? trunc(userText, 100) : 'User request',
-        rawDetail: reqBody,
+        text: msgText ? `"${trunc(msgText, 80)}"` : 'A2A message/send request',
+        rawDetail: d.reqB || null,
       },
-      policies: [],
-      plan: 'Keyless',
+      policies: [], plan: 'Keyless',
+      badge: { type: 'ok', text: 'A2A Protocol' },
+    },
+    {
+      type: 'arrow', from: 'gateway', to: 'weather',
+      label: 'Routed → Sea Conditions Agent',
+      message: { lane: 'weather', text: '⚡ Agent processing request' },
+    },
+    {
+      type: 'arrow', from: 'weather', to: 'gateway',
+      label: `A2A response — ${s}`,
+      message: {
+        lane: 'gateway',
+        text: agentText ? trunc(agentText, 100) : 'Sea conditions + tides ready',
+      },
     },
     {
       type: 'arrow', from: 'gateway', to: 'agent',
-      label: 'Forwarded',
-      message: { lane: 'agent', text: 'Processing request' },
+      label: `${s} — ${tot}ms`,
+      message: {
+        lane: 'agent',
+        text: agentText ? trunc(agentText, 120) : 'A2A response received',
+        rawDetail: d.eRes || d.resB || null,
+      },
+      badge: { type: st(s), text: `${tot}ms round-trip` },
     },
   ];
 }
@@ -431,12 +466,15 @@ const a2aPayloads = new Map();       // requestId → { request?, response?, use
 let pendingEvents     = [];          // { uri, apiName, timestamp, steps, isAgent, requestId, ... }
 let bufferTimeout     = null;        // 60 s safety net
 let flushTimer        = null;        // 500 ms grace after trigger
+let idleTimer         = null;        // flush 1.5 s after last event
 const MAX_WAIT_MS     = 60_000;
 const FLUSH_DELAY_MS  = 500;
+const IDLE_MS         = 1500;
 
 function flushBuffer() {
   if (bufferTimeout)  { clearTimeout(bufferTimeout);  bufferTimeout = null; }
   if (flushTimer)     { clearTimeout(flushTimer);     flushTimer    = null; }
+  if (idleTimer)      { clearTimeout(idleTimer);      idleTimer     = null; }
 
   const events = pendingEvents;
   pendingEvents = [];
@@ -593,10 +631,13 @@ function processEvent(evt) {
     }
   }
 
-  const steps = classify(evt);
-  if (!steps || !steps.length) return;
-
   const isAgent = (evt.uri || '').startsWith('/stations-agent');
+
+  const steps = classify(evt);
+  // Agent events return [] from fAgent — they still need to be buffered so
+  // flushBuffer can build the wrapper arrows and trigger the flush.
+  if (!steps) return;
+  if (!steps.length && !isAgent) return;
 
   /* ── build the buffered entry ── */
   const entry = { uri: evt.uri, apiName: evt.apiName, timestamp: evt.timestamp, steps, isAgent, requestId: evt.requestId };
@@ -641,6 +682,10 @@ function processEvent(evt) {
 
   /* notify frontends that events are being collected */
   broadcast({ type: 'tx-progress', buffered: pendingEvents.length });
+
+  /* idle timer — flush 1.5 s after the last event (whichever arrives last) */
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(flushBuffer, IDLE_MS);
 
   /* stations-agent = outermost request → trigger flush after short grace period */
   if (isAgent) {

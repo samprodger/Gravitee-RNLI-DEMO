@@ -15,7 +15,7 @@ import json
 import logging
 import os
 import uuid
-from typing import Any, Optional
+from typing import Any, Optional, List
 
 import httpx
 import uvicorn
@@ -45,6 +45,17 @@ MCP_HTTP_URL = os.getenv(
 
 # Fallback health-check URL (direct to lifeboat-api while MCP server warms up)
 LIFEBOAT_API_BASE = os.getenv("LIFEBOAT_API_BASE", "http://lifeboat-api:8000")
+
+# Sea Conditions Agent — called via A2A through the Gravitee gateway
+WEATHER_AGENT_URL = os.getenv(
+    "WEATHER_AGENT_URL",
+    "http://gio-apim-gateway:8082/weather-agent",
+)
+
+# MCP tools reserved for the weather A2A agent — excluded from LLM tool selection
+# so the A2A hop is preserved in the sequence diagram rather than being short-circuited
+# by direct MCP calls.  They're still visible in the MCP Inspector as a catalogue entry.
+_WEATHER_MCP_TOOLS = frozenset({"getSeaConditions", "getTidalEvents"})
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -97,7 +108,10 @@ def extract_user_context(raw_message: str) -> tuple[Optional[dict], str]:
 # Kept brief so small models (qwen3:0.6b) reliably choose the correct tool.
 BASE_SYSTEM_PROMPT = (
     "You are an RNLI lifeboat station assistant. "
-    "Always call a tool to fetch data when the user asks about stations, locations, or visits."
+    "Always call a tool to fetch data when the user asks about stations, locations, or visits. "
+    "When the user asks about sea conditions, weather, waves, wind, or tides for a location, "
+    "call findNearestStations for that location — sea and tidal conditions are fetched and "
+    "appended automatically after the station search."
 )
 
 # Richer prompt used for the second LLM call (formatting tool results).
@@ -107,6 +121,7 @@ FORMAT_SYSTEM_PROMPT = (
     "For each station include: name, type (ALB=offshore, ILB=inshore), address, distance if "
     "available, and a walking directions link using the exact 'google_maps_url' value as a "
     "markdown link: [🗺️ Get walking directions](url).\n\n"
+    "Do NOT include raw coordinates (lat/lon) in your response — they are handled separately.\n\n"
     "Be friendly and professional."
 )
 
@@ -210,6 +225,54 @@ def _extract_mcp_result(content_items) -> Any:
     return {}
 
 
+def _build_weather_map_block(lat: float, lon: float, location: str) -> str:
+    """Return a single-point STATION_MAP block for a weather query forecast location."""
+    data = json.dumps(
+        {"stations": [{"name": f"📍 {location}", "lat": round(lat, 6), "lon": round(lon, 6),
+                       "type": "", "distance_miles": None}],
+         "query": location, "weather_point": True},
+        separators=(",", ":"),
+    )
+    return f"\n[STATION_MAP:{data}]"
+
+
+def _build_station_map_block(tool_result: Any, query: str) -> str:
+    """
+    Extract station coordinates from a tool result and return a machine-readable
+    block that the frontend strips out to update the map.
+    Returns an empty string if no mappable stations are found.
+    """
+    items: list = []
+    if isinstance(tool_result, dict):
+        items = tool_result.get("stations") or []
+    elif isinstance(tool_result, list):
+        items = tool_result
+
+    stations = []
+    for s in items:
+        if not isinstance(s, dict):
+            continue
+        lat = s.get("lat") or s.get("latitude")
+        lon = s.get("lon") or s.get("longitude")
+        name = s.get("name", "")
+        stype = s.get("station_type") or s.get("type", "")
+        if lat is not None and lon is not None and name:
+            dist = s.get("distance_miles")
+            stations.append({
+                "name": name,
+                "lat": round(float(lat), 6),
+                "lon": round(float(lon), 6),
+                "type": stype,
+                "distance_miles": round(float(dist), 1) if dist is not None else None,
+            })
+
+    if not stations:
+        return ""
+
+    data = json.dumps({"stations": stations, "query": query}, separators=(",", ":"))
+    return f"\n[STATION_MAP:{data}]"
+
+
 async def _fetch_mcp_tools() -> list[dict]:
     """Connect to the MCP server and return tools in OpenAI format."""
     async with streamablehttp_client(MCP_HTTP_URL) as (read, write, _):
@@ -235,6 +298,51 @@ async def _call_mcp_tool(tool_name: str, tool_args: dict) -> Any:
             return data
 
 
+async def _call_weather_agent(lat: float, lon: float, location_hint: str = "") -> str:
+    """
+    Call the RNLI Sea Conditions Agent via A2A JSON-RPC through the Gravitee gateway.
+    The call is routed through the gateway so it appears in APIM analytics and the
+    real-time sequence diagram — demonstrating agent-to-agent communication.
+    Returns the formatted sea conditions + tidal events text, or empty string on failure.
+    """
+    hint = f" near {location_hint}" if location_hint else ""
+    message_text = f"conditions at {lat},{lon}{hint}"
+
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "message/send",
+        "id": str(uuid.uuid4()),
+        "params": {
+            "message": {
+                "messageId": str(uuid.uuid4()),
+                "role": "user",
+                "parts": [{"kind": "text", "text": message_text}],
+            }
+        },
+    }
+
+    logger.info("A2A call → weather-agent (%.4f, %.4f)", lat, lon)
+    try:
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            r = await client.post(f"{WEATHER_AGENT_URL}/", json=payload)
+            r.raise_for_status()
+            result = r.json().get("result", {})
+            # A2A response: result is a Message with parts
+            parts = result.get("parts", [])
+            text = " ".join(
+                p.get("text", "") for p in parts
+                if isinstance(p, dict) and p.get("kind") == "text"
+            ).strip()
+            if not text:
+                # Some SDK versions wrap parts differently
+                text = result.get("content", "")
+            logger.info("A2A weather-agent response received (%d chars)", len(text))
+            return text
+    except Exception as exc:
+        logger.warning("Weather agent call failed: %s", exc)
+        return ""
+
+
 # ---------------------------------------------------------------------------
 # LLM client (OpenAI-compatible, pointing at Ollama via Gravitee)
 # ---------------------------------------------------------------------------
@@ -244,7 +352,7 @@ class LLMClient:
     """OpenAI-compatible LLM client."""
 
     def __init__(self):
-        self.client = OpenAI(base_url=LLM_BASE_URL, api_key=LLM_API_KEY)
+        self.client = OpenAI(base_url=LLM_BASE_URL, api_key=LLM_API_KEY, timeout=60.0)
         self.model = LLM_MODEL
         self.temperature = LLM_TEMPERATURE
 
@@ -253,12 +361,17 @@ class LLMClient:
         query: str,
         tools: list[dict],
         system_prompt: str = BASE_SYSTEM_PROMPT,
+        history: Optional[List[dict]] = None,
+        force_tool: Optional[str] = None,
     ) -> tuple[str, list[dict]]:
-        """Send a user query and return (content, tool_calls)."""
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": query},
-        ]
+        """Send a user query and return (content, tool_calls).
+
+        force_tool: if set, instruct the LLM to call this specific tool (bypasses 'auto').
+        """
+        messages = [{"role": "system", "content": system_prompt}]
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": query})
         params: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -266,7 +379,10 @@ class LLMClient:
         }
         if tools:
             params["tools"] = tools
-            params["tool_choice"] = "auto"
+            if force_tool:
+                params["tool_choice"] = {"type": "function", "function": {"name": force_tool}}
+            else:
+                params["tool_choice"] = "auto"
 
         response = self.client.chat.completions.create(**params)
 
@@ -351,10 +467,15 @@ class LLMClient:
 class RNLIAgent:
     """RNLI Lifeboat Station Finder agent — uses Gravitee MCP server for tools."""
 
+    # Keep last N user+assistant pairs per context to give the LLM memory
+    # without overwhelming small models like qwen3:0.6b
+    MAX_HISTORY_TURNS = 3
+
     def __init__(self):
         self.llm = LLMClient()
         self._mcp_tools: list[dict] = []
         self._initialized = False
+        self._conversation_histories: dict[str, list] = {}
 
     async def initialize(self):
         """Fetch available MCP tools from the Gravitee gateway."""
@@ -386,7 +507,36 @@ class RNLIAgent:
                 logger.error("Failed to fetch MCP tools: %s", e)
         return self._mcp_tools
 
-    async def process_request(self, raw_message: str) -> str:
+    def _get_history(self, context_id: Optional[str]) -> list:
+        if not context_id:
+            return []
+        return self._conversation_histories.get(context_id, [])
+
+    def _save_history(self, context_id: Optional[str], user_msg: str, agent_reply: str):
+        if not context_id:
+            return
+        history = self._conversation_histories.get(context_id, [])
+        history = history + [
+            {"role": "user", "content": user_msg},
+            {"role": "assistant", "content": agent_reply},
+        ]
+        # Trim to last MAX_HISTORY_TURNS exchanges
+        max_msgs = self.MAX_HISTORY_TURNS * 2
+        if len(history) > max_msgs:
+            history = history[-max_msgs:]
+        self._conversation_histories[context_id] = history
+
+    @staticmethod
+    def _is_weather_query(message: str) -> bool:
+        """Return True if the message is primarily about sea conditions / weather / tides."""
+        lower = message.lower()
+        weather_terms = {
+            "weather", "sea condition", "wave", "swell", "wind", "tide", "tidal",
+            "high water", "low water", "conditions", "visibility", "forecast",
+        }
+        return any(term in lower for term in weather_terms)
+
+    async def process_request(self, raw_message: str, context_id: Optional[str] = None) -> str:
         """Process a user message (with optional context prefix) and return a response."""
         # Extract user context if present
         context, message = extract_user_context(raw_message)
@@ -401,19 +551,40 @@ class RNLIAgent:
                 len(context.get("visits") or []),
             )
 
+        weather_intent = self._is_weather_query(message)
+
         logger.info("=" * 60)
-        logger.info("User: %s", message)
+        logger.info("User: %s (weather_intent=%s)", message, weather_intent)
+
+        history = self._get_history(context_id)
 
         try:
-            tools = await self._ensure_mcp_tools()
+            all_tools = await self._ensure_mcp_tools()
+            # Exclude weather MCP tools — those are handled via A2A to preserve the
+            # agent-to-agent hop in the sequence diagram.  They remain visible in the
+            # MCP Inspector as a capability catalogue entry.
+            tools = [
+                t for t in all_tools
+                if t.get("function", {}).get("name") not in _WEATHER_MCP_TOOLS
+            ]
 
+            if not tools:
+                return (
+                    "I'm still connecting to the station database — please try again in a moment."
+                )
+
+            # Force findNearestStations for weather queries — small models tend to
+            # answer directly rather than calling a tool, so we override tool_choice.
+            force = "findNearestStations" if weather_intent else None
             content, tool_calls = await self.llm.process_query(
-                message, tools, system_prompt=tool_prompt
+                message, tools, system_prompt=tool_prompt, history=history,
+                force_tool=force,
             )
 
             if not tool_calls:
                 # LLM answered directly (e.g. from context — visit history questions)
                 if content:
+                    self._save_history(context_id, message, content)
                     return content
                 return (
                     "I can help you find RNLI lifeboat stations. "
@@ -429,9 +600,68 @@ class RNLIAgent:
             tool_result = await _call_mcp_tool(tool_name, tool_args)
             logger.info("MCP tool result received")
 
-            final_response = await self.llm.process_tool_result(
-                message, tool_call, tool_result, system_prompt=fmt_prompt
-            )
+            map_block = _build_station_map_block(tool_result, message)
+
+            # --- Weather / sea conditions path ---
+            # When the user asked about weather/tides we called findNearestStations only
+            # to obtain coordinates.  Skip the station list and return weather data only.
+            weather_text = ""
+            weather_location = ""
+            stations_for_weather = (
+                tool_result.get("stations") if isinstance(tool_result, dict) else []
+            ) or []
+
+            if stations_for_weather:
+                first = stations_for_weather[0]
+                w_lat = first.get("lat") or first.get("latitude")
+                w_lon = first.get("lon") or first.get("longitude")
+                weather_location = (
+                    tool_result.get("location") or first.get("name", "")
+                    if isinstance(tool_result, dict) else first.get("name", "")
+                )
+                if w_lat is not None and w_lon is not None:
+                    weather_text = await _call_weather_agent(
+                        float(w_lat), float(w_lon), weather_location
+                    )
+
+            if weather_intent:
+                # Return only sea conditions — no station list, single-point map
+                if weather_text:
+                    loc_label = f" near {weather_location}" if weather_location else ""
+                    final_response = (
+                        f"**🌊 Sea Conditions & Tides{loc_label}**\n\n" + weather_text
+                    )
+                    # Replace multi-station map with a single forecast-point marker
+                    if stations_for_weather and w_lat is not None and w_lon is not None:
+                        map_block = _build_weather_map_block(
+                            float(w_lat), float(w_lon), weather_location
+                        )
+                        final_response += map_block
+                    else:
+                        map_block = ""
+                else:
+                    final_response = (
+                        "I couldn't retrieve sea conditions right now — "
+                        "please try again in a moment."
+                    )
+                    map_block = ""
+            else:
+                # --- Station finder path ---
+                final_response = await self.llm.process_tool_result(
+                    message, tool_call, tool_result, system_prompt=fmt_prompt
+                )
+                if map_block:
+                    final_response += map_block
+                if weather_text:
+                    loc_label = f" near {weather_location}" if weather_location else ""
+                    final_response += (
+                        f"\n\n---\n\n**🌊 Sea Conditions & Tides{loc_label}**\n\n"
+                        + weather_text
+                    )
+
+            # Save history without map block so the LLM isn't fed raw JSON on the next turn
+            clean_for_history = final_response.replace(map_block, "").strip()
+            self._save_history(context_id, message, clean_for_history)
 
             logger.info("Response generated")
             logger.info("=" * 60)
@@ -441,6 +671,13 @@ class RNLIAgent:
             logger.warning("Rate limit hit: %s", e)
             return "You have reached the request limit. Please wait a moment before trying again."
         except Exception as e:
+            err_str = str(e)
+            if "toxic" in err_str.lower() or "prompt validation" in err_str.lower() or "guard" in err_str.lower():
+                logger.warning("Guard rails triggered: %s", e)
+                return (
+                    "I'm sorry, I can't process that request. "
+                    "Please rephrase and try again."
+                )
             logger.error("Unexpected error: %s", e, exc_info=True)
             return (
                 "I'm sorry, something went wrong while processing your request. "
@@ -539,7 +776,8 @@ class RNLIRequestHandler(RequestHandler):
         if not user_message:
             user_message = "Hello, how can you help me?"
 
-        response_content = await self.agent.process_request(user_message)
+        context_id = getattr(params, "contextId", None)
+        response_content = await self.agent.process_request(user_message, context_id=context_id)
 
         return Message(
             messageId=str(uuid.uuid4()),

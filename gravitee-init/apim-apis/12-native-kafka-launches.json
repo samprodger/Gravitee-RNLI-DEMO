@@ -1,0 +1,54 @@
+{
+  "api": {
+    "name": "RNLI Launches Native Kafka",
+    "apiVersion": "1.0",
+    "definitionVersion": "V4",
+    "type": "NATIVE",
+    "description": "Native Kafka gateway for the rnli.launches topic. Connect any Kafka client to localhost:9094 to consume lifeboat launch events in real time, governed by Gravitee.",
+    "tags": [],
+    "listeners": [
+      {
+        "type": "KAFKA",
+        "host": "0.0.0.0",
+        "port": 9094,
+        "entrypoints": [
+          { "type": "native-kafka" }
+        ]
+      }
+    ],
+    "endpointGroups": [
+      {
+        "name": "redpanda-native",
+        "type": "native-kafka",
+        "sharedConfiguration": {
+          "security": {
+            "protocol": "PLAINTEXT"
+          }
+        },
+        "endpoints": [
+          {
+            "name": "redpanda-broker",
+            "type": "native-kafka",
+            "weight": 1,
+            "inheritConfiguration": true,
+            "configuration": {
+              "bootstrapServers": "redpanda:9092"
+            }
+          }
+        ]
+      }
+    ],
+    "flows": [],
+    "plans": {
+      "KeyLess": {
+        "name": "Free",
+        "status": "PUBLISHED",
+        "security": {
+          "type": "KEY_LESS",
+          "configuration": "{}"
+        },
+        "flows": []
+      }
+    }
+  }
+}

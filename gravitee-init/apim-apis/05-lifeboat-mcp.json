@@ -125,6 +125,64 @@
                       "required": []
                     }
                   }
+                },
+                {
+                  "gatewayMapping": {
+                    "http": {
+                      "path": "/weather/conditions",
+                      "method": "GET",
+                      "queryParams": ["lat", "lon"]
+                    }
+                  },
+                  "toolDefinition": {
+                    "name": "getSeaConditions",
+                    "description": "Get current sea conditions for a UK coastal location. Returns wave height, wave period, swell height and direction, wind speed (mph), wind direction, weather description, and visibility. Requires latitude and longitude.",
+                    "inputSchema": {
+                      "type": "object",
+                      "properties": {
+                        "lat": {
+                          "type": "number",
+                          "description": "Latitude of the coastal location (e.g. 50.7161)"
+                        },
+                        "lon": {
+                          "type": "number",
+                          "description": "Longitude of the coastal location (e.g. -1.9791)"
+                        }
+                      },
+                      "required": ["lat", "lon"]
+                    }
+                  }
+                },
+                {
+                  "gatewayMapping": {
+                    "http": {
+                      "path": "/weather/tides",
+                      "method": "GET",
+                      "queryParams": ["lat", "lon", "count"]
+                    }
+                  },
+                  "toolDefinition": {
+                    "name": "getTidalEvents",
+                    "description": "Get the next high and low water tidal events for a UK coastal location. Returns times (UTC) and heights in metres, calculated using harmonic tidal prediction for UK waters.",
+                    "inputSchema": {
+                      "type": "object",
+                      "properties": {
+                        "lat": {
+                          "type": "number",
+                          "description": "Latitude of the coastal location (e.g. 50.7161)"
+                        },
+                        "lon": {
+                          "type": "number",
+                          "description": "Longitude of the coastal location (e.g. -1.9791)"
+                        },
+                        "count": {
+                          "type": "integer",
+                          "description": "Number of tidal events to return (default 4, max 8)"
+                        }
+                      },
+                      "required": ["lat", "lon"]
+                    }
+                  }
                 }
               ]
             }

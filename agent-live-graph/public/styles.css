@@ -36,6 +36,9 @@
   --api:            #059669;
   --api-bg:         #ECFDF5;
   --api-border:     rgba(5,150,105,0.20);
+  --weather:        #0891B2;
+  --weather-bg:     #ECFEFF;
+  --weather-border: rgba(8,145,178,0.20);
   --llm:            #EA580C;
   --llm-bg:         #FFF7ED;
   --llm-border:     rgba(234,88,12,0.20);
@@ -260,7 +263,7 @@ main {
 /* ── Lane Headers ──────────────────────────────────────────── */
 .lane-headers {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   padding: 16px 0 0;
   background: var(--bg);
   position: relative;
@@ -290,6 +293,7 @@ main {
 .icon-gateway { background: var(--gateway-bg); color: var(--gateway); border: 1.5px solid var(--gateway-border); }
 .icon-api     { background: var(--api-bg);     color: var(--api);     border: 1.5px solid var(--api-border); }
 .icon-llm     { background: var(--llm-bg);     color: var(--llm);     border: 1.5px solid var(--llm-border); }
+.icon-weather { background: var(--weather-bg); color: var(--weather); border: 1.5px solid var(--weather-border); }
 
 .lane-name {
   font-size: 11px;
@@ -303,6 +307,7 @@ main {
 [data-lane="gateway"] .lane-name { color: var(--gateway); }
 [data-lane="api"]     .lane-name { color: var(--api); }
 [data-lane="llm"]     .lane-name { color: var(--llm); }
+[data-lane="weather"] .lane-name { color: var(--weather); }
 
 .lane-sub { font-size: 10px; color: var(--text-3); font-weight: 500; }
 
@@ -330,9 +335,10 @@ main {
     repeating-linear-gradient(180deg, rgba(124,58,237,0.13) 0, rgba(124,58,237,0.13) 4px, transparent 4px, transparent 12px),
     repeating-linear-gradient(180deg, rgba(2,132,199,0.13) 0, rgba(2,132,199,0.13) 4px, transparent 4px, transparent 12px),
     repeating-linear-gradient(180deg, rgba(234,88,12,0.13) 0, rgba(234,88,12,0.13) 4px, transparent 4px, transparent 12px),
-    repeating-linear-gradient(180deg, rgba(5,150,105,0.13) 0, rgba(5,150,105,0.13) 4px, transparent 4px, transparent 12px);
-  background-size: 1.5px auto, 1.5px auto, 1.5px auto, 1.5px auto, 1.5px auto;
-  background-position: 10% 0, 30% 0, 50% 0, 70% 0, 90% 0;
+    repeating-linear-gradient(180deg, rgba(5,150,105,0.13) 0, rgba(5,150,105,0.13) 4px, transparent 4px, transparent 12px),
+    repeating-linear-gradient(180deg, rgba(8,145,178,0.13) 0, rgba(8,145,178,0.13) 4px, transparent 4px, transparent 12px);
+  background-size: 1.5px auto, 1.5px auto, 1.5px auto, 1.5px auto, 1.5px auto, 1.5px auto;
+  background-position: 8.33% 0, 25% 0, 41.67% 0, 58.33% 0, 75% 0, 91.67% 0;
   background-repeat: repeat-y;
 }
 
@@ -445,10 +451,10 @@ main {
   100% { left: 0; opacity: 0; }
 }
 
-/* ── Content Zone (5-col grid — no overlapping) ────────────── */
+/* ── Content Zone (6-col grid: client|agent|gateway|llm|api|weather) ── */
 .content-zone {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   padding: 2px 0 10px;
 }
 
@@ -487,6 +493,7 @@ main {
 .msg-card.msg-gateway { border-left-color: var(--gateway); }
 .msg-card.msg-api     { border-left-color: var(--api); }
 .msg-card.msg-llm     { border-left-color: var(--llm); }
+.msg-card.msg-weather { border-left-color: var(--weather); }
 
 .msg-text {
   font-size: 11px;
@@ -826,6 +833,25 @@ main {
   background: var(--bg-surface);
 }
 
+/* ── A2A call divider — visually distinct from LLM/MCP steps ── */
+.step-divider-a2a { padding: 20px 8px 8px; }
+
+.divider-line-a2a {
+  background: linear-gradient(90deg, transparent, var(--weather), transparent) !important;
+  height: 2px !important;
+  opacity: 0.6;
+}
+
+.divider-label-a2a {
+  background: var(--weather-bg) !important;
+  border-color: var(--weather) !important;
+  color: var(--weather) !important;
+  font-size: 11px !important;
+  padding: 6px 18px !important;
+  box-shadow: 0 0 12px rgba(8,145,178,0.25);
+  letter-spacing: 0.5px;
+}
+
 /* ── Transaction Progress Indicator ───────────────────────── */
 .tx-progress {
   display: flex;
@@ -1062,6 +1088,11 @@ footer {
   background: rgba(29, 78, 216, 0.08);
   color: #1D4ED8;
   border-color: rgba(29, 78, 216, 0.25);
+}
+.wh-pill-a2a {
+  background: rgba(8, 145, 178, 0.10);
+  color: #0891B2;
+  border-color: rgba(8, 145, 178, 0.30);
 }
 
 /* ── Waiting option cards ──────────────────────────────────── */

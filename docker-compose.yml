@@ -41,6 +41,7 @@ services:
     restart: unless-stopped
     ports:
       - "8082:8082"
+      - "9094:9094"   # Native Kafka gateway port
     depends_on:
       gio-apim-mongodb:
         condition: service_healthy
@@ -59,6 +60,11 @@ services:
       - gravitee_reporters_tcp_host=agent-live-graph
       - gravitee_reporters_tcp_port=9001
       - gravitee_reporters_tcp_output=json
+      # Native Kafka gateway listener (port 9094) — exposes Kafka APIs via the gateway
+      - gravitee_kafka_enabled=true
+      - gravitee_kafka_port=9094
+      - gravitee_kafka_host=0.0.0.0
+      - gravitee_kafka_routingMode=port
     volumes:
       # ONNX toxicity classifier model for AI Guard Rails
       - ./apim-gateway-models:/opt/graviteeio-gateway/models
@@ -168,6 +174,85 @@ services:
     networks: [northbound]
 
   # ---------------------------------------------------------------------------
+  # Redpanda (Kafka-compatible broker)
+  # ---------------------------------------------------------------------------
+
+  redpanda:
+    image: redpandadata/redpanda:latest
+    container_name: redpanda
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+      - --mode dev-container
+      - --smp 1
+      - --default-log-level=warn
+    ports:
+      - "19092:19092"   # Kafka API (external / host access)
+      - "18082:18082"   # HTTP Proxy (REST produce/consume)
+      - "18081:18081"   # Schema Registry
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [southbound, northbound]
+
+  redpanda-init:
+    image: redpandadata/redpanda:latest
+    container_name: redpanda-init
+    restart: "no"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        rpk topic create rnli.sea-conditions --brokers redpanda:9092 --partitions 3 --replicas 1 &&
+        rpk topic create rnli.tides          --brokers redpanda:9092 --partitions 3 --replicas 1 &&
+        rpk topic create rnli.launches       --brokers redpanda:9092 --partitions 3 --replicas 1 &&
+        echo "Kafka topics ready"
+    networks: [southbound]
+
+  launches-poller:
+    build:
+      context: ./launches-poller
+      dockerfile: Dockerfile
+    container_name: launches-poller
+    restart: unless-stopped
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
+      - KAFKA_TOPIC=rnli.launches
+      - POLL_INTERVAL_SECONDS=30
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    networks: [northbound, southbound]
+
+  redpanda-console:
+    image: redpandadata/console:latest
+    container_name: redpanda-console
+    restart: unless-stopped
+    ports:
+      - "8086:8080"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    environment:
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_SCHEMAREGISTRY_ENABLED=true
+      - KAFKA_SCHEMAREGISTRY_URLS=http://redpanda:8081
+    networks: [southbound, northbound]
+
+  # ---------------------------------------------------------------------------
   # MCP Inspector
   # ---------------------------------------------------------------------------
 
@@ -203,8 +288,9 @@ services:
       - APIM_BASE_URL=http://gio-apim-management-api:8083
       - AM_BASE_URL=http://gio-am-management-api:8093
       # Guard Rails sensitivity threshold (0.0–1.0). Lower = more sensitive.
-      # Default in 03-llm-proxy.json is 0.5. Override here to tune without editing JSON.
-      # - GUARD_RAILS_THRESHOLD=0.5
+      # Default in 03-llm-proxy.json is 0.5. Raised to 0.8 to reduce false positives
+      # on demo queries with typos (e.g. "clostest").
+      - GUARD_RAILS_THRESHOLD=0.95
     networks: [southbound]
 
   # ---------------------------------------------------------------------------
@@ -231,6 +317,27 @@ services:
       - "8004:8000"
     networks: [northbound, southbound]
 
+  rnli-weather-agent:
+    build:
+      context: ./rnli-weather-agent
+      dockerfile: Dockerfile
+    container_name: rnli-weather-agent
+    restart: unless-stopped
+    ports:
+      - "8005:8001"
+    environment:
+      - AGENT_SERVER_PORT=8001
+      # LLM call routes through Gravitee — visible in APIM analytics + sequence diagram
+      - LLM_BASE_URL=http://gio-apim-gateway:8082/llm-proxy
+      - LLM_MODEL=qwen3:0.6b
+      # Kafka — publish sea conditions + tidal events to Redpanda topics
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
+      - KAFKA_ENABLED=true
+    depends_on:
+      - gio-apim-gateway
+      - redpanda
+    networks: [northbound, southbound]
+
   rnli-a2a-agent:
     build:
       context: ./rnli-a2a-agent
@@ -242,6 +349,7 @@ services:
     depends_on:
       - lifeboat-api
       - gio-apim-gateway
+      - rnli-weather-agent
     environment:
       - LIFEBOAT_API_BASE=http://lifeboat-api:8000
       - LLM_BASE_URL=http://gio-apim-gateway:8082/llm-proxy
@@ -249,6 +357,8 @@ services:
       - AGENT_SERVER_PORT=8001
       # Tool calls route through the Gravitee MCP server — traffic visible in APIM analytics
       - MCP_HTTP_URL=http://gio-apim-gateway:8082/lifeboat-mcp/mcp
+      # A2A call to the Sea Conditions agent — routed through gateway for sequence diagram visibility
+      - WEATHER_AGENT_URL=http://gio-apim-gateway:8082/weather-agent
     networks: [northbound, southbound]
 
   rnli-website:

@@ -1,0 +1,86 @@
+{
+  "api": {
+    "name": "RNLI Launches Stream",
+    "apiVersion": "1.0",
+    "definitionVersion": "V4",
+    "type": "MESSAGE",
+    "description": "Live stream of RNLI lifeboat launches via Kafka, exposed through the Gravitee event streaming gateway. Subscribe via SSE (GET) to receive new launches as they arrive, or publish via POST. Topic: rnli.launches",
+    "tags": [],
+    "listeners": [
+      {
+        "type": "HTTP",
+        "paths": [{"path": "/launches-stream/"}],
+        "entrypoints": [
+          {
+            "type": "sse",
+            "qos": "AT_MOST_ONCE",
+            "configuration": {
+              "heartbeatIntervalInMs": 0,
+              "metadataAsComment": false,
+              "headersAsComment": false
+            }
+          }
+        ],
+        "cors": {
+          "enabled": true,
+          "allowOrigin": ["*"],
+          "allowMethods": ["GET","OPTIONS"],
+          "allowHeaders": ["Content-Type","Authorization","Accept","Origin","Last-Event-ID"],
+          "exposeHeaders": [],
+          "allowCredentials": false,
+          "maxAge": 86400,
+          "runPolicies": false
+        }
+      }
+    ],
+    "endpointGroups": [
+      {
+        "name": "redpanda-kafka",
+        "type": "kafka",
+        "loadBalancer": {"type": "ROUND_ROBIN"},
+        "sharedConfiguration": {
+          "security": {"protocol": "PLAINTEXT"},
+          "consumer": {
+            "enabled": true,
+            "autoOffsetReset": "latest",
+            "encodeMessageId": true,
+            "topics": ["rnli.launches"]
+          }
+        },
+        "endpoints": [
+          {
+            "name": "redpanda",
+            "type": "kafka",
+            "weight": 1,
+            "inheritConfiguration": true,
+            "configuration": {
+              "bootstrapServers": "redpanda:9092"
+            }
+          }
+        ]
+      }
+    ],
+    "analytics": {
+      "enabled": true,
+      "logging": {
+        "content": {
+          "messageHeaders": true,
+          "messagePayload": true,
+          "messageMetadata": false
+        },
+        "phase": {"messageRequest": true, "messageResponse": true},
+        "mode": {"endpoint": true, "entrypoint": true}
+      }
+    },
+    "flowExecution": {"mode": "DEFAULT", "matchRequired": false},
+    "flows": [],
+    "plans": [
+      {
+        "name": "Free",
+        "status": "PUBLISHED",
+        "security": {"type": "KEY_LESS"},
+        "flows": []
+      }
+    ]
+  }
+}

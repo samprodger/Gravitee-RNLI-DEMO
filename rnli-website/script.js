@@ -21,6 +21,11 @@ let isTyping = false;
 let isChatMaximized = false;
 let welcomeMessagePersonalized = false;
 
+// Map state
+let _map = null;
+let _mapMarkers = [];
+let _mapHasData = false;
+
 // Known phrase that triggers Gravitee AI Guard Rails (DistilBERT toxic content classifier)
 const GUARD_RAILS_TEST_PHRASE = 'How do I make a weapon to hurt someone?';
 
@@ -59,6 +64,7 @@ const els = {
     rateLimitBar:        document.getElementById('rateLimitBar'),
     rateLimitFill:       document.getElementById('rateLimitFill'),
     rateLimitLabel:      document.getElementById('rateLimitLabel'),
+    toggleMapBtn:        document.getElementById('toggleMapBtn'),
 
     // Settings modal
     settingsModal:         document.getElementById('settingsModal'),
@@ -80,6 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadSettings();
     bindEvents();
     initAgent();
+    loadAgentMesh();
 });
 
 function loadSettings() {
@@ -136,6 +143,10 @@ function bindEvents() {
     els.cancelSettingsBtn?.addEventListener('click', closeSettingsModal);
     els.saveSettingsBtn?.addEventListener('click', saveSettings);
     els.connectAgentBtn?.addEventListener('click', testAgentConnection);
+
+    // Map panel
+    document.getElementById('closeMapBtn')?.addEventListener('click', hideMapPanel);
+    els.toggleMapBtn?.addEventListener('click', toggleMapPanel);
 }
 
 // ---------------------------------------------------------------------------
@@ -187,9 +198,13 @@ function toggleChatSize() {
     isChatMaximized = !isChatMaximized;
     if (isChatMaximized) {
         els.chatWindow?.classList.add('maximized');
+        document.getElementById('mapPanel')?.classList.add('map-panel-maximized');
     } else {
         els.chatWindow?.classList.remove('maximized');
+        document.getElementById('mapPanel')?.classList.remove('map-panel-maximized');
     }
+    // Allow CSS transition to settle then recalculate map size
+    setTimeout(() => _map?.invalidateSize(), 250);
 }
 
 function clearChat() {
@@ -338,7 +353,7 @@ function handleSend() {
 async function sendMessage(text) {
     if (!text.trim()) return;
 
-    // Hide quick replies after first send
+    // Hide quick replies while the agent is thinking
     if (els.quickReplies) els.quickReplies.style.display = 'none';
 
     appendMessage('user', text);
@@ -347,9 +362,13 @@ async function sendMessage(text) {
     setInputEnabled(false);
 
     try {
-        const { text: response, elapsedMs } = await callAgent(text);
+        const { text: rawResponse, elapsedMs } = await callAgent(text);
+        const { cleanText, stations, weatherPoint } = extractStationMapData(rawResponse);
         hideTypingIndicator();
-        appendMessage('agent', response, { elapsedMs });
+        appendMessage('agent', cleanText, { elapsedMs });
+        if (stations && stations.length > 0) {
+            updateMap(stations, weatherPoint);
+        }
         // Increment Silver rate limit counter on successful response
         if (getUserPlan() === 'silver') {
             rateLimitCount++;
@@ -371,6 +390,8 @@ async function sendMessage(text) {
         isTyping = false;
         setInputEnabled(true);
         els.chatInput?.focus();
+        // Restore quick replies so the user always has suggestions available
+        if (els.quickReplies) els.quickReplies.style.display = '';
     }
 }
 
@@ -755,6 +776,151 @@ function setInputEnabled(enabled) {
 
 function generateId() {
     return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+}
+
+// ---------------------------------------------------------------------------
+// Station Map (Leaflet)
+// ---------------------------------------------------------------------------
+
+function extractStationMapData(text) {
+    const prefix = '[STATION_MAP:';
+    const idx = text.indexOf(prefix);
+    if (idx === -1) return { cleanText: text, stations: null };
+    try {
+        const jsonStart = idx + prefix.length;
+        // Walk the JSON to find the matching closing brace
+        let depth = 0;
+        let end = -1;
+        for (let i = jsonStart; i < text.length; i++) {
+            if (text[i] === '{') depth++;
+            else if (text[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+        }
+        if (end === -1) return { cleanText: text, stations: null };
+        const data = JSON.parse(text.slice(jsonStart, end + 1));
+        // Strip the block (including the closing ]) from the text
+        const before = text.slice(0, idx).trimEnd();
+        let after = text.slice(end + 1);
+        if (after.startsWith(']')) after = after.slice(1);
+        const cleanText = (before + after).trim();
+        return { cleanText, stations: data.stations || [], weatherPoint: !!data.weather_point };
+    } catch (_) {
+        return { cleanText: text, stations: null };
+    }
+}
+
+function initMap() {
+    if (_map) return;
+    _map = L.map('stationMap', {
+        center: [54.5, -3.5],
+        zoom: 6,
+        zoomControl: true,
+        attributionControl: true,
+    });
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/">CARTO</a>',
+        maxZoom: 19,
+    }).addTo(_map);
+}
+
+function updateMap(stations, weatherPoint = false) {
+    const panel = document.getElementById('mapPanel');
+    if (!panel) return;
+
+    // Show panel
+    panel.classList.remove('hidden');
+    _mapHasData = true;
+
+    // Show map toggle button in chat header
+    if (els.toggleMapBtn) els.toggleMapBtn.classList.remove('hidden');
+
+    // Apply maximized class if chat is currently maximized
+    if (isChatMaximized) panel.classList.add('map-panel-maximized');
+    else panel.classList.remove('map-panel-maximized');
+
+    // Init map lazily
+    initMap();
+
+    // Clear old markers
+    _mapMarkers.forEach(m => _map.removeLayer(m));
+    _mapMarkers = [];
+
+    const bounds = [];
+
+    stations.forEach((s, idx) => {
+        const num = idx + 1;
+        const icon = weatherPoint
+            ? L.divIcon({
+                className: 'rnli-marker-icon',
+                html: `<div class="rnli-marker-weather">🌊</div>`,
+                iconSize: [26, 26],
+                iconAnchor: [13, 13],
+                tooltipAnchor: [0, -15],
+                popupAnchor: [0, -15]
+            })
+            : L.divIcon({
+                className: 'rnli-marker-icon',
+                html: `<div class="rnli-marker-num">${num}</div>`,
+                iconSize: [22, 22],
+                iconAnchor: [11, 11],
+                tooltipAnchor: [0, -13],
+                popupAnchor: [0, -13]
+            });
+        const marker = L.marker([s.lat, s.lon], { icon });
+
+        const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}&travelmode=walking`;
+        const typeLabel = s.type ? `<span style="display:inline-block;background:${s.type==='ALB'?'#e8edf8':'rgba(242,136,0,0.15)'};color:${s.type==='ALB'?'#002663':'#7a4000'};font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;margin-left:4px">${s.type}</span>` : '';
+
+        const distLabel = s.distance_miles != null ? `<span style="color:#5a6a80;font-size:10px;margin-left:4px">${s.distance_miles} mi</span>` : '';
+        marker.bindTooltip(
+            `<span style="font-family:Inter,sans-serif;font-weight:700;color:#002663;font-size:11px">${s.name}</span>${distLabel}`,
+            { permanent: true, direction: 'top', offset: [0, -11], className: 'station-label' }
+        );
+
+        const distRow = s.distance_miles != null
+            ? `<div style="color:#5a6a80;font-size:11px;margin-bottom:8px">${s.distance_miles} mi away</div>`
+            : '';
+        marker.bindPopup(
+            `<div style="font-family:Inter,sans-serif;min-width:160px">` +
+            `<div style="font-weight:700;color:#002663;font-size:13px;margin-bottom:4px">${s.name}${typeLabel}</div>` +
+            distRow +
+            `<a href="${mapsUrl}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#002663;font-weight:600;text-decoration:none;background:rgba(0,38,99,0.07);border:1px solid rgba(0,38,99,0.15);border-radius:4px;padding:3px 8px">` +
+            `🗺️ Get directions</a></div>`,
+            { maxWidth: 220 }
+        );
+
+        marker.addTo(_map);
+        _mapMarkers.push(marker);
+        bounds.push([s.lat, s.lon]);
+    });
+
+    if (bounds.length > 0) {
+        _map.fitBounds(bounds, { padding: [32, 32], maxZoom: 11 });
+    }
+
+    const titleEl = document.getElementById('mapPanelTitle');
+    if (titleEl) {
+        titleEl.textContent = weatherPoint
+            ? 'Forecast Location'
+            : `${stations.length} Station${stations.length !== 1 ? 's' : ''} Found`;
+    }
+
+    // Recalculate map size after panel appears
+    setTimeout(() => _map.invalidateSize(), 150);
+}
+
+function hideMapPanel() {
+    document.getElementById('mapPanel')?.classList.add('hidden');
+}
+
+function toggleMapPanel() {
+    const panel = document.getElementById('mapPanel');
+    if (!panel) return;
+    if (panel.classList.contains('hidden')) {
+        panel.classList.remove('hidden');
+        setTimeout(() => _map?.invalidateSize(), 150);
+    } else {
+        panel.classList.add('hidden');
+    }
 }
 
 // ============================================================
@@ -1331,8 +1497,8 @@ function updateQuickRepliesForUser() {
     } else {
         els.quickReplies.innerHTML = `
             <button class="quick-reply-btn" onclick="sendFromQuickReply('Nearest stations to Brighton')">Near Brighton</button>
+            <button class="quick-reply-btn" onclick="sendFromQuickReply('What are the sea conditions near Poole?')">🌊 Sea conditions</button>
             <button class="quick-reply-btn" onclick="sendFromQuickReply('Stations in Scotland')">Scotland</button>
-            <button class="quick-reply-btn" onclick="sendFromQuickReply('ALB stations in Wales')">Wales ALBs</button>
             ${guardRailsBtn}
         `;
     }
@@ -1627,3 +1793,71 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Escape') closeRecordVisitModal();
     });
 });
+
+// ---------------------------------------------------------------------------
+// A2A Agent Mesh — fetch agent cards and render registry
+// ---------------------------------------------------------------------------
+
+const AGENT_CARDS = [
+    {
+        url: 'http://localhost:8082/stations-agent/.well-known/agent-card.json',
+        role: 'Agent 1',
+        colour: '#7C3AED',
+        icon: '🤖',
+        calledBy: 'Client (website)',
+        calls: 'Sea Conditions Agent via A2A',
+    },
+    {
+        url: 'http://localhost:8082/weather-agent/.well-known/agent-card.json',
+        role: 'Agent 2',
+        colour: '#0891B2',
+        icon: '🌊',
+        calledBy: 'Station Finder Agent via A2A',
+        calls: 'Open-Meteo (marine + forecast APIs)',
+    },
+];
+
+async function loadAgentMesh() {
+    const grid = document.getElementById('agentMeshGrid');
+    if (!grid) return;
+
+    const cards = await Promise.all(AGENT_CARDS.map(async (meta) => {
+        try {
+            const r = await fetch(meta.url);
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const card = await r.json();
+            return { meta, card, ok: true };
+        } catch {
+            return { meta, card: null, ok: false };
+        }
+    }));
+
+    grid.innerHTML = cards.map(({ meta, card, ok }) => {
+        const name = ok ? card.name : meta.role;
+        const desc = ok ? (card.description || '').slice(0, 140) : 'Agent unavailable';
+        const version = ok && card.version ? `v${card.version}` : '';
+        const transport = ok && card.preferredTransport ? card.preferredTransport : 'A2A';
+        const skills = ok && card.skills ? card.skills.map(s =>
+            `<span class="agent-skill-tag">${s.name}</span>`).join('') : '';
+
+        return `
+        <div class="agent-card-tile" style="--agent-colour:${meta.colour}">
+            <div class="agent-card-header">
+                <span class="agent-card-icon">${meta.icon}</span>
+                <div>
+                    <div class="agent-card-role">${meta.role}</div>
+                    <div class="agent-card-name">${name}</div>
+                </div>
+                <span class="agent-card-badge ${ok ? 'badge-live' : 'badge-offline'}">${ok ? '● Live' : '● Offline'}</span>
+            </div>
+            <p class="agent-card-desc">${desc}${desc.length === 140 ? '…' : ''}</p>
+            <div class="agent-card-meta">
+                <div class="agent-meta-row"><span class="agent-meta-label">Protocol</span><span class="agent-meta-val">${transport} ${version}</span></div>
+                <div class="agent-meta-row"><span class="agent-meta-label">Called by</span><span class="agent-meta-val">${meta.calledBy}</span></div>
+                <div class="agent-meta-row"><span class="agent-meta-label">Calls</span><span class="agent-meta-val">${meta.calls}</span></div>
+            </div>
+            ${skills ? `<div class="agent-skills">${skills}</div>` : ''}
+            <a class="agent-card-link" href="${meta.url}" target="_blank" rel="noopener">View agent card ↗</a>
+        </div>`;
+    }).join('');
+}

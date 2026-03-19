@@ -9,12 +9,14 @@ Endpoints:
   GET /history                                        - visited stations for demo user (Joe Doe)
 """
 
+import asyncio
 import json
 import math
 import os
 import re
 import urllib.parse
 from contextlib import asynccontextmanager
+from datetime import date, timedelta
 from typing import List, Optional
 
 import httpx
@@ -132,172 +134,189 @@ STATION_ADDRESSES = {
 
 # ---------------------------------------------------------------------------
 # Recent lifeboat launch data (demo data — Gold Member exclusive)
+# Dates are computed relative to today so they always look current.
 # ---------------------------------------------------------------------------
 
-RECENT_LAUNCHES = {
+def _ago(days: int) -> str:
+    """Return a formatted date string for N days before today."""
+    d = date.today() - timedelta(days=days)
+    return d.strftime("%d %B %Y").lstrip("0")
+
+
+def _build_recent_launches() -> dict:
+    return {
     "Poole": {
-        "date": "8 March 2026",
+        "date": _ago(11),
         "description": "ALB launched to assist a 35ft yacht with engine failure 4 nautical miles south-east of Studland Bay. Two crew members returned safely to Poole Quay.",
         "lifeboat": "Severn class ALB",
         "outcome": "All safe",
     },
     "Swanage": {
-        "date": "5 March 2026",
+        "date": _ago(14),
         "description": "ILB launched to assist two kayakers caught in strong currents off Peveril Ledge. Both paddlers brought safely ashore at Swanage Beach.",
         "lifeboat": "Atlantic 85 ILB",
         "outcome": "All safe",
     },
     "Tower": {
-        "date": "9 March 2026",
+        "date": _ago(10),
         "description": "E-class ILB launched to assist a capsized paddleboarder near Blackfriars Bridge on the Thames. Person recovered and taken to shore uninjured.",
         "lifeboat": "E-class ILB",
         "outcome": "All safe",
     },
     "Brighton": {
-        "date": "7 March 2026",
+        "date": _ago(12),
         "description": "ILB launched to assist a swimmer in difficulty off the Palace Pier. Casualty safely recovered and transferred to awaiting paramedics on the promenade.",
         "lifeboat": "Atlantic 85 ILB",
         "outcome": "Casualty transferred to paramedics",
     },
     "Falmouth": {
-        "date": "6 March 2026",
+        "date": _ago(13),
         "description": "ALB launched to locate a fishing vessel overdue 12 nautical miles south-west of the Lizard. Vessel and crew of three located and escorted safely to Falmouth.",
         "lifeboat": "Tamar class ALB",
         "outcome": "All safe",
     },
     "Dover": {
-        "date": "10 March 2026",
+        "date": _ago(9),
         "description": "ALB launched to assist a cross-Channel ferry passenger vessel with a medical emergency. Patient safely transferred to awaiting ambulance at Eastern Docks.",
         "lifeboat": "Severn class ALB",
         "outcome": "Patient transferred to hospital",
     },
     "Whitby": {
-        "date": "4 March 2026",
+        "date": _ago(15),
         "description": "ILB launched to assist a fishing coble with water ingress off Whitby North Pier. Vessel towed safely to the inner harbour.",
         "lifeboat": "Atlantic 85 ILB",
         "outcome": "Vessel towed to safety",
     },
     "Cromer": {
-        "date": "3 March 2026",
+        "date": _ago(16),
         "description": "ALB launched to assist a cargo vessel with propulsion issues 15 nautical miles north of Cromer. Vessel towed to Yarmouth Roads.",
         "lifeboat": "Shannon class ALB",
         "outcome": "Vessel towed to port",
     },
     "Exmouth": {
-        "date": "7 March 2026",
+        "date": _ago(12),
         "description": "ILB launched to assist a windsurfer with broken equipment near the Exe estuary entrance. Windsurfer recovered and returned to Exmouth beach.",
         "lifeboat": "Atlantic 85 ILB",
         "outcome": "All safe",
     },
     "Aberdeen": {
-        "date": "8 March 2026",
+        "date": _ago(11),
         "description": "ALB launched to assist an offshore supply vessel with a crew medical emergency 20nm east of Aberdeen. Patient airlifted by coastguard helicopter.",
         "lifeboat": "Severn class ALB",
         "outcome": "Patient airlifted to hospital",
     },
     "Padstow": {
-        "date": "5 March 2026",
+        "date": _ago(14),
         "description": "ALB launched to search for a missing person reported near Pentire Point. Search coordinated with HM Coastguard; person located safely on the cliff path.",
         "lifeboat": "Tamar class ALB",
         "outcome": "Missing person found safe",
     },
     "Plymouth": {
-        "date": "9 March 2026",
+        "date": _ago(10),
         "description": "ILB launched to assist a RIB with engine failure in Plymouth Sound. Three persons safely towed back to Sutton Harbour.",
         "lifeboat": "Atlantic 85 ILB",
         "outcome": "All safe",
     },
     "Torbay": {
-        "date": "6 March 2026",
+        "date": _ago(13),
         "description": "ALB launched to assist a motor vessel aground on Thatcher Rock near Torquay. Vessel refloated on the rising tide and escorted to Torquay Marina.",
         "lifeboat": "Tamar class ALB",
         "outcome": "Vessel refloated and escorted",
     },
     "Tenby": {
-        "date": "4 March 2026",
+        "date": _ago(15),
         "description": "ILB launched to assist divers who surfaced in difficulty near Caldey Island. Two divers recovered and returned safely to Tenby Harbour.",
         "lifeboat": "Atlantic 85 ILB",
         "outcome": "All safe",
     },
     "Wells-next-the-Sea": {
-        "date": "2 March 2026",
+        "date": _ago(17),
         "description": "ILB launched to assist a sailing dinghy that capsized near the main channel. Occupant rescued and dinghy recovered.",
         "lifeboat": "Atlantic 75 ILB",
         "outcome": "All safe",
     },
     "Lowestoft": {
-        "date": "7 March 2026",
+        "date": _ago(12),
         "description": "ALB launched to assist a fishing vessel with net fouled in her propeller 8nm east of Lowestoft. Vessel freed and escorted to port.",
         "lifeboat": "Shannon class ALB",
         "outcome": "Vessel freed and escorted",
     },
     "Weymouth": {
-        "date": "8 March 2026",
+        "date": _ago(11),
         "description": "ILB launched to locate a missing jet ski reported overdue in Weymouth Bay. Jet ski and rider located near Portland Bill, towed back to Weymouth.",
         "lifeboat": "Atlantic 85 ILB",
         "outcome": "All safe",
     },
     "St Ives": {
-        "date": "5 March 2026",
+        "date": _ago(14),
         "description": "ALB launched to assist a yacht with failed rigging in deteriorating conditions 6nm north of Cape Cornwall. Vessel towed safely to St Ives.",
         "lifeboat": "Mersey class ALB",
         "outcome": "Vessel towed to safety",
     },
     "Eastbourne": {
-        "date": "6 March 2026",
+        "date": _ago(13),
         "description": "ILB launched to assist a kitesurfer in difficulty near Beachy Head. Kite surfer safely recovered and landed at Eastbourne seafront.",
         "lifeboat": "Atlantic 85 ILB",
         "outcome": "All safe",
     },
     "Margate": {
-        "date": "9 March 2026",
+        "date": _ago(10),
         "description": "ILB launched to assist a small motorboat with engine failure off Botany Bay. Vessel towed safely to Margate Harbour.",
         "lifeboat": "Atlantic 85 ILB",
         "outcome": "Vessel towed to safety",
     },
     "Hastings": {
-        "date": "3 March 2026",
+        "date": _ago(16),
         "description": "ALB launched to assist a fishing vessel with a crew member suffering chest pains 4nm south-east of Hastings. Patient transferred to paramedics on arrival.",
         "lifeboat": "Shannon class ALB",
         "outcome": "Patient transferred to hospital",
     },
     "Humber": {
-        "date": "10 March 2026",
+        "date": _ago(9),
         "description": "ALB launched to assist a bulk carrier that had suffered engine failure in the Humber Estuary. Vessel assisted and escorted to Immingham.",
         "lifeboat": "Severn class ALB",
         "outcome": "Vessel escorted to port",
     },
     "Scarborough": {
-        "date": "4 March 2026",
+        "date": _ago(15),
         "description": "ILB launched to assist a canoe that overturned in rough seas near South Bay. Occupant recovered suffering from cold exposure, transferred to paramedics.",
         "lifeboat": "Atlantic 85 ILB",
         "outcome": "Casualty transferred to paramedics",
     },
     "Barmouth": {
-        "date": "1 March 2026",
+        "date": _ago(18),
         "description": "ILB launched to assist a windsurfer in difficulty near the Barmouth Bar in strong offshore winds. Windsurfer safely recovered.",
         "lifeboat": "Atlantic 85 ILB",
         "outcome": "All safe",
     },
     "Loch Ness": {
-        "date": "9 March 2026",
+        "date": _ago(10),
         "description": "ILB launched to assist a motorboat that had run aground on the northern shore of Loch Ness. Occupants transferred to shore.",
         "lifeboat": "D-class ILB",
         "outcome": "All safe",
     },
     "Hoylake": {
-        "date": "6 March 2026",
+        "date": _ago(13),
         "description": "ALB launched to assist three persons cut off by the tide on a sandbank in the Dee Estuary. All three safely recovered.",
         "lifeboat": "Shannon class ALB",
         "outcome": "All safe",
     },
     "Troon": {
-        "date": "7 March 2026",
+        "date": _ago(12),
         "description": "ALB launched to assist a sailing yacht dismasted in strong westerly gales in the Firth of Clyde. Vessel towed to Troon Marina.",
         "lifeboat": "Severn class ALB",
         "outcome": "Vessel towed to safety",
     },
-}
+    "Bembridge": {
+        "date": _ago(2),
+        "description": "ILB launched after a golden retriever named Biscuit chased a ball into the Solent and was unable to return against the tide. Biscuit was recovered half a mile offshore, exhausted but unharmed, and reunited with his very relieved owner on the beach.",
+        "lifeboat": "Atlantic 85 ILB",
+        "outcome": "Dog rescued safe and well 🐕",
+    },
+    }
+
+
+RECENT_LAUNCHES = _build_recent_launches()
 
 # ---------------------------------------------------------------------------
 # In-memory station store
@@ -536,7 +555,7 @@ async def nearest_stations(
         ...,
         description="UK postcode (e.g. 'SW1A 2AA') or town name (e.g. 'Brighton')",
     ),
-    count: int = Query(5, ge=1, le=50, description="Number of nearest stations to return"),
+    count: int = Query(3, ge=1, le=50, description="Number of nearest stations to return"),
 ):
     """
     Find the nearest RNLI lifeboat stations to a given UK postcode or town.
@@ -653,6 +672,188 @@ def get_visited_history():
         "displayName": "Joe Doe",
         "plan": "gold",
         "visits": enriched_visits,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Sea conditions & tidal endpoints (exposed as MCP tools via Gravitee)
+# ---------------------------------------------------------------------------
+
+_MARINE_URL = "https://marine-api.open-meteo.com/v1/marine"
+_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+_M2_PERIOD = 44_714  # seconds (12h 25min 14sec)
+
+_TIDAL_REGIONS = [
+    (51.0, 51.8, -4.0, -2.5, 10.5),   # Bristol Channel
+    (53.0, 54.5, -5.5, -3.0,  7.0),   # Irish Sea
+    (54.5, 60.0, -6.0, -4.0,  3.5),   # Scotland west
+    (56.0, 60.0, -2.5,  2.0,  3.5),   # Scotland east / North Sea north
+    (51.0, 56.0, -0.5,  2.0,  4.5),   # North Sea / east coast
+    (49.5, 51.5, -6.0,  1.5,  4.5),   # English Channel + SW Approaches
+]
+_PORT_OFFSETS = [
+    (51.1,  1.3,    0), (50.7, -1.9,  -60), (50.9, -1.4,   60),
+    (50.8, -1.1,   30), (50.8, -0.1,  -50), (50.6, -2.5,  -40),
+    (50.4, -4.1, -250), (50.2, -5.1, -290), (50.5, -5.0, -290),
+    (50.1, -5.5, -300), (51.5, -2.7,  110), (51.5, -3.2,   90),
+    (51.6, -3.9,   40), (51.7, -5.1,  -10), (52.7, -4.1, -120),
+    (53.3, -4.6, -150), (53.4, -3.0, -200), (54.6, -5.9, -310),
+    (54.3, -0.4,   50), (54.9, -1.4,   30), (55.0, -1.4,   15),
+    (55.9, -3.2,  -20), (57.1, -2.1,  -15), (58.4, -3.1,  -30),
+]
+_WMO = {
+    0:"Clear sky",1:"Mainly clear",2:"Partly cloudy",3:"Overcast",
+    45:"Fog",51:"Light drizzle",53:"Drizzle",55:"Heavy drizzle",
+    61:"Slight rain",63:"Moderate rain",65:"Heavy rain",
+    80:"Rain showers",81:"Moderate showers",82:"Heavy showers",
+    95:"Thunderstorm",
+}
+_DIRS = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"]
+
+
+def _cardinal(deg: float) -> str:
+    return _DIRS[round(deg / 22.5) % 16]
+
+
+def _tidal_range(lat: float, lon: float) -> float:
+    for lat_min, lat_max, lon_min, lon_max, rng in _TIDAL_REGIONS:
+        if lat_min <= lat <= lat_max and lon_min <= lon <= lon_max:
+            return rng
+    return 4.0
+
+
+def _phase_offset(lat: float, lon: float) -> float:
+    best_dist, best_min = float("inf"), 0
+    for plat, plon, offset_min in _PORT_OFFSETS:
+        d = math.hypot(lat - plat, lon - plon)
+        if d < best_dist:
+            best_dist, best_min = d, offset_min
+    return (best_min * 60) / _M2_PERIOD
+
+
+@app.get("/weather/conditions", summary="Current sea conditions for a coastal location")
+async def get_sea_conditions(lat: float = Query(..., description="Latitude"), lon: float = Query(..., description="Longitude")):
+    """
+    Returns current sea conditions from Open-Meteo: wave height, swell, wind speed
+    and direction, weather description, and visibility.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            marine_r, forecast_r = await asyncio.gather(
+                client.get(_MARINE_URL, params={
+                    "latitude": lat, "longitude": lon, "timezone": "UTC",
+                    "current": "wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_direction,swell_wave_period",
+                }),
+                client.get(_FORECAST_URL, params={
+                    "latitude": lat, "longitude": lon, "timezone": "UTC",
+                    "current": "wind_speed_10m,wind_direction_10m,weather_code,visibility",
+                    "wind_speed_unit": "mph",
+                }),
+            )
+        marine = marine_r.json().get("current", {}) if marine_r.is_success else {}
+        forecast = forecast_r.json().get("current", {}) if forecast_r.is_success else {}
+    except Exception:
+        marine, forecast = {}, {}
+
+    result: dict = {"latitude": lat, "longitude": lon}
+    if marine:
+        wh = marine.get("wave_height")
+        if wh is not None:
+            result["wave_height_m"] = round(float(wh), 1)
+        wp = marine.get("wave_period")
+        if wp is not None:
+            result["wave_period_s"] = round(float(wp), 1)
+        wd = marine.get("wave_direction")
+        if wd is not None:
+            result["wave_direction"] = _cardinal(float(wd))
+        sh = marine.get("swell_wave_height")
+        if sh is not None:
+            result["swell_height_m"] = round(float(sh), 1)
+        sd = marine.get("swell_wave_direction")
+        if sd is not None:
+            result["swell_direction"] = _cardinal(float(sd))
+    if forecast:
+        ws = forecast.get("wind_speed_10m")
+        if ws is not None:
+            result["wind_speed_mph"] = round(float(ws))
+        wdir = forecast.get("wind_direction_10m")
+        if wdir is not None:
+            result["wind_direction"] = _cardinal(float(wdir))
+        wcode = forecast.get("weather_code")
+        if wcode is not None:
+            result["conditions"] = _WMO.get(int(wcode), "Unknown")
+        vis = forecast.get("visibility")
+        if vis is not None:
+            result["visibility_km"] = round(float(vis) / 1000, 1)
+    return result
+
+
+@app.get("/weather/tides", summary="Next tidal events for a coastal location")
+def get_tidal_events(
+    lat: float = Query(..., description="Latitude"),
+    lon: float = Query(..., description="Longitude"),
+    count: int = Query(4, ge=1, le=8, description="Number of tidal events to return"),
+):
+    """
+    Returns the next high and low water times and heights using a semi-diurnal
+    harmonic model calibrated to UK Standard Port offsets.
+    """
+    from datetime import datetime, timedelta, timezone as _tz
+
+    def _relative_time(t: datetime, ref: datetime) -> str:
+        secs = int((t - ref).total_seconds())
+        h, m = divmod(secs // 60, 60)
+        if h and m:
+            return f"in {h}h {m}m"
+        elif h:
+            return f"in {h}h"
+        return f"in {m}m"
+
+    tidal_range = _tidal_range(lat, lon)
+    phase_off = _phase_offset(lat, lon)
+
+    epoch = datetime(2024, 1, 1, 0, 0, 0, tzinfo=_tz.utc)
+    now = datetime.now(_tz.utc)
+    elapsed = (now - epoch).total_seconds()
+    current_phase = (elapsed / _M2_PERIOD + phase_off) % 1.0
+
+    time_to_hw = ((0.0 - current_phase) % 1.0) * _M2_PERIOD
+    time_to_lw = ((0.5 - current_phase) % 1.0) * _M2_PERIOD
+    if time_to_hw < 300:
+        time_to_hw += _M2_PERIOD
+    if time_to_lw < 300:
+        time_to_lw += _M2_PERIOD
+
+    mean_level = max(1.0, tidal_range * 0.3)
+    hw_h = round(mean_level + tidal_range / 2, 1)
+    lw_h = round(max(0.2, mean_level - tidal_range / 2), 1)
+
+    hw1 = now + timedelta(seconds=time_to_hw)
+    lw1 = now + timedelta(seconds=time_to_lw)
+
+    events = sorted([
+        {"type": "High Water", "time": hw1, "height_m": hw_h},
+        {"type": "Low Water",  "time": lw1, "height_m": lw_h},
+        {"type": "High Water", "time": hw1 + timedelta(seconds=_M2_PERIOD), "height_m": hw_h},
+        {"type": "Low Water",  "time": lw1 + timedelta(seconds=_M2_PERIOD), "height_m": lw_h},
+        {"type": "High Water", "time": hw1 + timedelta(seconds=2 * _M2_PERIOD), "height_m": hw_h},
+        {"type": "Low Water",  "time": lw1 + timedelta(seconds=2 * _M2_PERIOD), "height_m": lw_h},
+    ], key=lambda e: e["time"])
+
+    return {
+        "latitude": lat,
+        "longitude": lon,
+        "tidal_range_m": tidal_range,
+        "events": [
+            {
+                "type": e["type"],
+                "time": e["time"].strftime("%H:%M UTC"),
+                "in": _relative_time(e["time"], now),
+                "date": e["time"].strftime("%Y-%m-%d"),
+                "height_m": e["height_m"],
+            }
+            for e in events[:count]
+        ],
     }
 
 

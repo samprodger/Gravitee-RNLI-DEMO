@@ -1,0 +1,7 @@
+a2a-sdk[http-server]
+openai
+httpx
+uvicorn
+starlette
+sse-starlette
+aiokafka

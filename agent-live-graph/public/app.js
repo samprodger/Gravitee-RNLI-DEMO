@@ -12,14 +12,16 @@
   'use strict';
 
   /* ── Lane geometry ──────────────────────────────────────── */
-  const LANES = { client: 0, agent: 1, gateway: 2, llm: 3, api: 4 };
-  const centerPct = (idx) => (idx * 20) + 10;
+  const LANES = { client: 0, agent: 1, gateway: 2, llm: 3, api: 4, weather: 5 };
+  const N_LANES = Object.keys(LANES).length;
+  const centerPct = (idx) => (idx * (100 / N_LANES)) + (100 / N_LANES / 2);
   const LANE_COLORS = {
     client:  '#6B7280',
     agent:   '#7C3AED',
     gateway: '#0284C7',
     llm:     '#EA580C',
     api:     '#059669',
+    weather: '#0891B2',
   };
   const laneColor = (l) => LANE_COLORS[l] || '#666';
 
@@ -97,17 +99,17 @@
   /* ── Divider ────────────────────────────────────────────── */
   function renderDivider(step) {
     const el = document.createElement('div');
-    el.className = 'step-divider';
+    el.className = step.a2a ? 'step-divider step-divider-a2a' : 'step-divider';
     el.innerHTML = `
       <div class="divider-inner">
-        <div class="divider-line"></div>
-        <span class="divider-label">
+        <div class="divider-line${step.a2a ? ' divider-line-a2a' : ''}"></div>
+        <span class="divider-label${step.a2a ? ' divider-label-a2a' : ''}">
           <svg class="divider-chevron" width="10" height="10" viewBox="0 0 10 10">
             <path d="M3 2l4 3-4 3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
           ${escapeHtml(step.label)}
         </span>
-        <div class="divider-line"></div>
+        <div class="divider-line${step.a2a ? ' divider-line-a2a' : ''}"></div>
       </div>`;
 
     return el;
@@ -168,7 +170,7 @@
     const contentZone = document.createElement('div');
     contentZone.className = 'content-zone';
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < N_LANES; i++) {
       const col = document.createElement('div');
       col.className = 'lane-col';
 
@@ -1006,6 +1008,83 @@
     },
   ];
 
+  /* ── A2A scenario — sea conditions via Agent 2 ── */
+  const SCENARIO_A2A = [
+    { type: 'divider', label: 'Phase 1 — User Request' },
+    {
+      type: 'arrow', from: 'client', to: 'gateway',
+      label: 'POST /stations-agent/',
+      message: { lane: 'gateway', text: 'What are the sea conditions near Brighton?' },
+      policies: [], plan: 'Gold',
+    },
+    {
+      type: 'arrow', from: 'gateway', to: 'agent',
+      label: 'Authenticated & forwarded',
+      message: { lane: 'agent', text: 'Weather intent detected — resolving coordinates' },
+    },
+
+    { type: 'divider', label: 'Phase 2 — Resolve Coordinates via MCP' },
+    {
+      type: 'arrow', from: 'agent', to: 'gateway',
+      label: 'POST /lifeboat-mcp',
+      message: { lane: 'gateway', text: 'MCP tools/call — findNearestStations' },
+      policies: [], plan: 'Gold',
+    },
+    {
+      type: 'arrow', from: 'gateway', to: 'api',
+      label: 'GET /stations/nearest?location=Brighton',
+      message: { lane: 'api', text: 'Resolve coastal coordinates for Brighton' },
+    },
+    {
+      type: 'arrow', from: 'api', to: 'gateway',
+      label: '200',
+      message: { lane: 'gateway', text: 'Coordinates returned' },
+    },
+    {
+      type: 'arrow', from: 'gateway', to: 'agent',
+      label: '200 — 42ms',
+      message: { lane: 'agent', text: '50.8189°N 0.1377°W — Brighton coast' },
+      badge: { type: 'ok', text: '42ms' },
+    },
+
+    { type: 'divider', label: 'A2A — Agent to Agent Call', a2a: true },
+    {
+      type: 'arrow', from: 'agent', to: 'gateway',
+      label: 'POST /weather-agent/ (A2A)',
+      message: { lane: 'gateway', text: 'A2A message/send → Sea Conditions Agent' },
+      policies: [], plan: 'Gold',
+    },
+    {
+      type: 'arrow', from: 'gateway', to: 'weather',
+      label: 'Routed to Agent 2',
+      message: { lane: 'weather', text: 'conditions at 50.8189, -0.1377' },
+    },
+    {
+      type: 'arrow', from: 'weather', to: 'gateway',
+      label: '200 — 1.2s',
+      message: { lane: 'gateway', text: 'Sea conditions from Open-Meteo marine API' },
+      badge: { type: 'ok', text: '1.2s' },
+    },
+    {
+      type: 'arrow', from: 'gateway', to: 'agent',
+      label: '200',
+      message: { lane: 'agent', text: 'Waves 1.2m · Wind 15mph SW · Sunrise 06:48' },
+    },
+
+    { type: 'divider', label: 'Phase 4 — Response Delivered' },
+    {
+      type: 'arrow', from: 'agent', to: 'gateway',
+      label: 'A2A response',
+      message: { lane: 'gateway', text: 'Weather response ready' },
+    },
+    {
+      type: 'arrow', from: 'gateway', to: 'client',
+      label: '200 — 1.8s total',
+      message: { lane: 'client', text: 'Sea conditions & tides delivered' },
+      badge: { type: 'ok', text: '1.8s total / Gold plan' },
+    },
+  ];
+
   /* ── Guard Rails scenario — Silver plan, harmful query blocked ── */
   const SCENARIO_GUARD_RAILS = [
     /* ── Phase 1 — User Request (Silver plan, harmful query) ── */
@@ -1125,6 +1204,7 @@
 
   function getActiveScenario() {
     const val = scenarioSelect ? scenarioSelect.value : 'happy';
+    if (val === 'a2a')        return SCENARIO_A2A;
     if (val === 'guardrails') return SCENARIO_GUARD_RAILS;
     if (val === 'cache')      return SCENARIO_CACHE_HIT;
     if (val === 'ratelimit')  return SCENARIO_RATE_LIMIT;
@@ -1145,6 +1225,17 @@
           { icon: '🔑', text: 'JWT validated · Gold plan · rate limit not reached' },
         ],
         footer: '1.9s total  ·  Gold plan  ·  2 LLM calls  ·  1 MCP tool call',
+        cls: 'cb-ok',
+      },
+      a2a: {
+        icon: '🤝', title: 'A2A Agent Mesh — two agents, one response',
+        rows: [
+          { icon: '🌊', text: 'Station Finder (Agent 1) called Sea Conditions (Agent 2) via A2A JSON-RPC' },
+          { icon: '🔀', text: 'Both agent hops routed through Gravitee — fully observable & governed' },
+          { icon: '📡', text: 'Agent 2 fetched live data from Open-Meteo marine + forecast APIs' },
+          { icon: '🔑', text: 'Each agent-to-agent call is authenticated and rate-limited independently' },
+        ],
+        footer: '1.8s total  ·  Gold plan  ·  1 MCP call  ·  1 A2A call  ·  0 tokens for weather',
         cls: 'cb-ok',
       },
       guardrails: {
@@ -1267,6 +1358,15 @@
           { label: 'Token Rate Limit', cls: '' },
           { label: 'Response Cache', cls: '' },
           { label: 'MCP Tool Calls', cls: '' },
+        ],
+      },
+      a2a: {
+        desc: 'Watch "What are the sea conditions near Brighton?" flow through two agents — Station Finder calls Sea Conditions via A2A, all routed through Gravitee.',
+        pills: [
+          { label: 'A2A Agent Mesh', cls: 'wh-pill-a2a' },
+          { label: 'MCP Tool Call', cls: '' },
+          { label: 'Agent 1 → Agent 2', cls: 'wh-pill-a2a' },
+          { label: 'Open-Meteo Marine API', cls: '' },
         ],
       },
       guardrails: {

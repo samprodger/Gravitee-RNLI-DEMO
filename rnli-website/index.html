@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 </head>
 <body>
 
@@ -196,8 +197,8 @@
                     <div class="hiw-num">3</div>
                     <div>
                         <div class="hiw-title">AI Agent + LLM</div>
-                        <div class="hiw-desc">The RNLI agent reasons via a Gravitee-proxied LLM endpoint, then invokes MCP tools to fetch live station data.</div>
-                        <span class="hiw-badge">MCP Tools</span>
+                        <div class="hiw-desc">The Station Finder agent uses a Gravitee-proxied LLM and MCP tools for station data — then calls the Sea Conditions agent via A2A for live weather and tides.</div>
+                        <span class="hiw-badge">MCP + A2A</span>
                     </div>
                 </div>
                 <div class="hiw-step">
@@ -266,6 +267,28 @@
                     <p>Over 238 lifeboat stations protecting coastlines across England, Scotland, Wales, Northern Ireland, and the Channel Islands.</p>
                     <span class="feature-tag">Explore →</span>
                 </div>
+                <div class="feature-card" onclick="sendQuickMessage('What are the sea conditions and waves near Brighton?')">
+                    <div class="feature-icon feature-icon-blue">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M2 12c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0"></path>
+                            <path d="M2 17c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0"></path>
+                            <path d="M2 7c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0"></path>
+                        </svg>
+                    </div>
+                    <h3>Sea Conditions</h3>
+                    <p>Live wave height, swell, wind speed and direction, and visibility for any UK coastal location — fetched in real time via an A2A agent call.</p>
+                    <span class="feature-tag">Try it →</span>
+                </div>
+                <div class="feature-card" onclick="sendQuickMessage('What are the tides near Poole today?')">
+                    <div class="feature-icon feature-icon-yellow">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"></path>
+                        </svg>
+                    </div>
+                    <h3>Tidal Information</h3>
+                    <p>Next high and low water times with heights and time-to-event — calculated using a harmonic tidal model for UK standard ports.</p>
+                    <span class="feature-tag">Try it →</span>
+                </div>
                 <div class="feature-card feature-card-guard-rails" onclick="triggerGuardRailsDemo()">
                     <div class="feature-icon feature-icon-shield">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -313,6 +336,17 @@
     </section>
 
     <!-- About Section -->
+    <!-- A2A Agent Mesh Registry -->
+    <section class="agent-mesh-section" id="agentMesh">
+        <div class="container">
+            <h2 class="section-title">A2A Agent Mesh</h2>
+            <p class="section-subtitle">Agents registered on the Gravitee AI Agent Mesh — discovered via A2A agent cards and routed through the gateway.</p>
+            <div class="agent-mesh-grid" id="agentMeshGrid">
+                <div class="agent-mesh-loading">Fetching agent cards from gateway…</div>
+            </div>
+        </div>
+    </section>
+
     <section class="about" id="about">
         <div class="container">
             <div class="about-grid">
@@ -351,6 +385,27 @@
         </div>
     </section>
 
+    <!-- Station Map Panel (appears when agent returns station results) -->
+    <div id="mapPanel" class="map-panel hidden">
+        <div class="map-panel-header">
+            <div class="map-panel-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"></polygon>
+                    <line x1="9" y1="3" x2="9" y2="18"></line>
+                    <line x1="15" y1="6" x2="15" y2="21"></line>
+                </svg>
+                <span id="mapPanelTitle">Stations Map</span>
+            </div>
+            <button id="closeMapBtn" class="icon-btn" title="Close map">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div id="stationMap" class="map-container"></div>
+    </div>
+
     <!-- Chat Widget Button (floating) -->
     <button id="chatWidgetBtn" class="chat-widget-btn" title="Open AI Assistant">
         <svg id="chatWidgetIcon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -385,6 +440,13 @@
                 </div>
             </div>
             <div class="chat-header-actions">
+                <button id="toggleMapBtn" class="icon-btn map-toggle-btn hidden" title="Toggle station map">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"></polygon>
+                        <line x1="9" y1="3" x2="9" y2="18"></line>
+                        <line x1="15" y1="6" x2="15" y2="21"></line>
+                    </svg>
+                </button>
                 <button id="clearChatBtn" class="icon-btn" title="Clear chat &amp; start over">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="1 4 1 10 7 10"></polyline>
@@ -413,12 +475,12 @@
                     </svg>
                 </div>
                 <div class="message-content">
-                    <p>Hello! I'm your RNLI Lifeboat Station Finder. I can help you:</p>
+                    <p>Hello! I'm your RNLI AI Assistant. I can help you:</p>
                     <ul>
                         <li>Find the nearest stations to any UK postcode or town</li>
+                        <li>Get live sea conditions, wave heights &amp; tidal times</li>
                         <li>Get postal addresses &amp; Google Maps walking directions</li>
                         <li>Explore stations by region (Scotland, Wales, etc.)</li>
-                        <li>Learn about ALB and ILB station types</li>
                     </ul>
                     <p>What would you like to know?</p>
                 </div>
@@ -564,6 +626,7 @@
                 <a href="http://localhost:8084" target="_blank" rel="noopener" class="footer-link">APIM Console</a>
                 <a href="http://localhost:8081" target="_blank" rel="noopener" class="footer-link">AM Console</a>
                 <a href="http://localhost:9002" target="_blank" rel="noopener" class="footer-link">Agent Inspector</a>
+                <a href="http://localhost:8086" target="_blank" rel="noopener" class="footer-link">Redpanda</a>
                 <a href="https://rnli.org" target="_blank" rel="noopener" class="footer-link">RNLI.org</a>
             </div>
         </div>
@@ -572,6 +635,7 @@
     <!-- Runtime config — generated from env vars by docker-entrypoint.d/40-env-config.sh -->
     <!-- Falls back gracefully if not present (defaults are in script.js) -->
     <script src="config.js" onerror="console.info('[Config] config.js not found — using script.js defaults')"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 # RNLI Lifeboat Station Finder — Gravitee AI Agent Demo 🚢🤖
 
-A hands-on demonstration of how to build, manage, and observe AI agents using the **Gravitee AI Agent Mesh**. Through the lens of the **RNLI (Royal National Lifeboat Institution)**, this demo showcases a complete AI agent workflow — from natural-language user queries to real-time visual observability.
+A hands-on demonstration of how to build, manage, and observe AI agents using the **Gravitee AI Agent Mesh**. Through the lens of the **RNLI (Royal National Lifeboat Institution)**, this demo showcases a complete AI agent workflow — MCP tool calling, Agent-to-Agent (A2A) orchestration, real-time event streaming via Kafka, and full observability.
 
 ---
 
@@ -31,49 +31,29 @@ A hands-on demonstration of how to build, manage, and observe AI agents using th
    *(First run takes a few minutes — grab a coffee ☕)*
 
 5. **Visit the mock RNLI Website** 🌊
-   Open **[http://localhost:8002](http://localhost:8002)** and chat with the AI agent:
+   Open **[http://localhost:8002](http://localhost:8002)** and try these queries:
 
-   - **"What are the nearest lifeboat stations to Brighton?"**
-     *Finds 5 nearby stations with addresses and walking directions*
+   - **"What are the nearest lifeboat stations to Brighton?"** — MCP tool call
+   - **"What are the sea conditions near Poole?"** — A2A agent-to-agent call
+   - **"What stations have I visited?"** — requires login (`joe.doe@gravitee.io` / `HelloWorld@123`)
 
-   - **"Show me all-weather lifeboat stations in Scotland"**
-     *Uses two tools in combination*
-
-   - **"What stations have I visited?"**
-     *Requires login — sign in with `joe.doe@gravitee.io` / `HelloWorld@123`*
-
-   - **After logging in:** *"When did I last visit a lifeboat station?"*
-     *Returns personalised visit history*
-
-6. **Demo Fine-Grained Access** 🏅 *(Optional)*
-   Try the three-tier data API directly:
-   ```bash
-   # Bronze — no auth, 4 columns
-   curl -s -X POST http://localhost:8082/databricks-stations/api/2.0/sql/statements \
-     -H "Content-Type: application/json" -d '{"statement":"SELECT * FROM stations"}'
-
-   # Silver — API key, 8 columns
-   curl -s -X POST http://localhost:8082/databricks-stations/api/2.0/sql/statements \
-     -H "Content-Type: application/json" \
-     -H "X-Gravitee-Api-Key: 592eafe3-fdf4-4a58-aeaf-e3fdf42a586b" \
-     -d '{"statement":"SELECT * FROM stations"}'
-   ```
-
-7. **Watch the Flow** 🔭
-   Open the **[AI Agent Inspector](http://localhost:9002)** to see every step visualised in real time as you chat.
+6. **Watch the Flow** 🔭
+   Open the **[AI Agent Inspector](http://localhost:9002)** to see every step visualised in real time.
 
 ---
 
-## 🎯 What You'll Learn
+## 🎯 What This Demo Covers
 
 | Concept | Description |
 |---------|-------------|
-| **MCP Servers** | How to transform REST APIs into AI-discoverable tools |
-| **LLM Proxy** | How to route and proxy Large Language Model traffic through the gateway |
-| **AI Agents** | How agents reason, plan, and execute actions in a loop |
-| **Authentication** | How OAuth2/OIDC protects user-specific data via Gravitee AM |
-| **Fine-Grained Access** | How Bronze/Silver/Gold API plans enforce data tiers at the gateway |
-| **Real-Time Observability** | How to visualise every step of an AI Agent flow as it happens |
+| **MCP Servers** | Transform REST APIs into AI-discoverable tools at the gateway level |
+| **LLM Proxy** | Route, observe, and apply guard rails to all LLM traffic centrally |
+| **AI Agents** | Agents that reason, plan, and call tools in a loop |
+| **A2A (Agent-to-Agent)** | Agents calling other specialised agents through the gateway |
+| **Authentication** | OAuth2/OIDC protects user-specific data via Gravitee AM |
+| **Fine-Grained Access** | Bronze/Silver/Gold API plans enforce data tiers at the gateway |
+| **Kafka Event Streaming** | Publish and consume real-time events through Gravitee MESSAGE APIs |
+| **Real-Time Observability** | Every agent step visualised via TCP Reporter + AI Agent Inspector |
 
 ---
 
@@ -84,110 +64,53 @@ flowchart LR
     subgraph Clients["🖥️ Clients"]
         direction TB
         Website["🌐 RNLI Website\n(Chatbot)"]
-        Inspector["🔭 MCP Inspector\n(Developer tool)"]
+        Inspector["🔭 MCP Inspector"]
+        SSE["📡 SSE Stream\nConsumers"]
     end
 
-    subgraph Gateway["🚀 Gravitee Gateway"]
+    subgraph Gateway["🚀 Gravitee Gateway :8082"]
         direction TB
         AgentProxy["🤖 RNLI Agent Proxy\n/stations-agent/"]
         MCPServer["🔧 Lifeboat MCP Server\n/lifeboat-mcp/mcp"]
         LLMProxy["🧠 LLM Proxy\n/llm-proxy/"]
+        WeatherProxy["🌊 Weather Agent Proxy\n/weather-agent/"]
+        LaunchesStream["📡 Launches Stream\n/launches-stream/"]
+        SeaCondStream["📡 Sea Conditions Stream\n/sea-conditions-stream/"]
+        TidesStream["📡 Tides Stream\n/tides-stream/"]
     end
 
-    subgraph Backend["⚙️ Backend"]
+    subgraph Agents["⚙️ Agents & Services"]
         direction TB
-        Agent["🤖 RNLI A2A Agent"]
+        A2AAgent["🤖 RNLI A2A Agent"]
+        WeatherAgent["🌊 Sea Conditions Agent"]
         LifeboatAPI["🚢 Lifeboat API"]
+        LaunchesPoller["🔄 Launches Poller"]
         LLM["🧠 Ollama / LLM"]
     end
 
-    subgraph Security["🔐 Security"]
-        AM["Gravitee AM\n(OAuth2 / OIDC)"]
+    subgraph Kafka["📨 Kafka (Redpanda)"]
+        direction TB
+        TopicSea["rnli.sea-conditions"]
+        TopicTides["rnli.tides"]
+        TopicLaunches["rnli.launches"]
     end
 
-    Website --> AgentProxy
+    Website --> AgentProxy --> A2AAgent
+    A2AAgent --> LLMProxy --> LLM
+    A2AAgent --> MCPServer --> LifeboatAPI
+    A2AAgent --> WeatherProxy --> WeatherAgent
+    WeatherAgent --> TopicSea
+    WeatherAgent --> TopicTides
+    LaunchesPoller --> TopicLaunches
+    TopicLaunches --> LaunchesStream --> SSE
+    TopicSea --> SeaCondStream --> SSE
+    TopicTides --> TidesStream --> SSE
     Inspector --> MCPServer
-    AgentProxy --> Agent
-    Agent --> LLMProxy
-    Agent --> MCPServer
-    MCPServer --> LifeboatAPI
-    LLMProxy --> LLM
-    Website -.-> Security
 ```
-
-| Component | Purpose |
-|-----------|---------|
-| **RNLI Lifeboat API** | REST API serving station data (locations, types, visited history) |
-| **RNLI A2A Agent** | AI agent that orchestrates MCP tools and LLM to answer user queries |
-| **LLM Proxy** | Gravitee gateway proxy routing LLM requests to Ollama |
-| **Lifeboat MCP Server** | Gravitee V4 API exposing station tools via Model Context Protocol |
-| **RNLI Agent Proxy** | Gravitee proxy fronting the A2A agent (keyless, with CORS) |
-| **Gravitee AM** | OAuth2/OIDC server — issues tokens for authenticated Gold Member access |
-| **AI Agent Inspector** | Real-time visual sequence diagram of every agent step |
-| **MCP Inspector** | Developer tool to browse and test the MCP server tools |
 
 ---
 
-## 🚀 Setting Up Your Environment
-
-### 1. Get a Gravitee Enterprise License
-
-The MCP Server and AI features require a **Gravitee Enterprise License**.
-
-> **🎁 Free 2-week license:** [landing.gravitee.io/gravitee-hands-on-ai-workshop](https://landing.gravitee.io/gravitee-hands-on-ai-workshop)
-
-Once you have your base64-encoded license, create your `.env` file:
-
-```bash
-cp .env-template .env
-# Edit .env: set GRAVITEE_LICENSE=<your base64 license key>
-```
-
-### 2. Download the AI Guard Rails Model
-
-The **AI Guard Rails** feature uses a DistilBERT ONNX model to classify LLM requests for harmful content at the gateway level — before they reach the LLM. The model is published publicly by Gravitee on Hugging Face but is too large to include in this repo (129 MB).
-
-```bash
-# Install the Hugging Face CLI if you don't have it
-pip install huggingface_hub
-
-# Download the quantised ONNX model into the correct directory
-huggingface-cli download gravitee-io/distilbert-multilingual-toxicity-classifier \
-  model.quant.onnx \
-  --local-dir apim-gateway-models/gravitee-io/distilbert-multilingual-toxicity-classifier/
-```
-
-> The model is mounted into the Gravitee Gateway container automatically via `docker-compose.yml`.
-> Without it the gateway starts normally but the AI Guardrails policy will not enforce content checks.
-
-Model on Hugging Face: [gravitee-io/distilbert-multilingual-toxicity-classifier](https://huggingface.co/gravitee-io/distilbert-multilingual-toxicity-classifier)
-
-### 3. Install Ollama (Recommended)
-
-Running Ollama locally is faster than containerised inference (especially on Apple Silicon).
-
-```bash
-# Install from https://ollama.com/download, then:
-ollama serve
-ollama pull qwen3:0.6b
-ollama list | grep -q 'qwen3:0.6b' && echo "Model ready"
-```
-
-### 3. Launch the Environment
-
-```bash
-docker compose up -d --build
-```
-
-All services start automatically, including:
-- Gravitee APIM + AM
-- RNLI Lifeboat API
-- RNLI A2A Agent
-- AI Agent Inspector
-
-The `gravitee-init` container runs once to import all APIs and configure AM. Allow **3–4 minutes** for all services to be ready.
-
-### 4. Available Services
+## 🧩 All Services
 
 | Service | URL | Description |
 |---------|-----|-------------|
@@ -196,25 +119,63 @@ The `gravitee-init` container runs once to import all APIs and configure AM. All
 | **MCP Inspector** | http://localhost:6274 | Browse and test the MCP server tools |
 | **APIM Console** | http://localhost:8084 | API Management — analytics, policies, APIs |
 | **APIM Gateway** | http://localhost:8082 | The Gravitee API Gateway |
-| **AM Console** | http://localhost:8081 | Access Management (login: `admin` / `adminadmin`) |
-| **Lifeboat API** | http://localhost:8001 | Raw REST API (internal, also at `/lifeboat-api/` via gateway) |
+| **AM Console** | http://localhost:8081 | Access Management (`admin` / `adminadmin`) |
+| **Redpanda Console** | http://localhost:8086 | Browse Kafka topics and messages |
+| **Lifeboat API** | http://localhost:8001 | Raw REST API |
+| **Weather Agent** | http://localhost:8005 | Sea conditions A2A agent (direct) |
+| **A2A Agent** | http://localhost:8003 | Main RNLI A2A agent (direct) |
+
+---
+
+## 🚀 Setup
+
+### 1. Get a Gravitee Enterprise License
+
+> **🎁 Free 2-week license:** [landing.gravitee.io/gravitee-hands-on-ai-workshop](https://landing.gravitee.io/gravitee-hands-on-ai-workshop)
+
+```bash
+cp .env-template .env
+# Edit .env: set GRAVITEE_LICENSE=<your base64 license key>
+```
+
+### 2. Download the AI Guard Rails Model
+
+The AI Guard Rails feature uses a DistilBERT ONNX model to classify LLM requests for harmful content at the gateway level.
+
+```bash
+pip install huggingface_hub
+huggingface-cli download gravitee-io/distilbert-multilingual-toxicity-classifier \
+  model.quant.onnx \
+  --local-dir apim-gateway-models/gravitee-io/distilbert-multilingual-toxicity-classifier/
+```
+
+> Without it the gateway starts normally but the AI Guardrails policy will not enforce content checks.
+
+### 3. Install Ollama
+
+```bash
+# Install from https://ollama.com/download, then:
+ollama serve
+ollama pull qwen3:0.6b
+```
+
+### 4. Launch
+
+```bash
+docker compose up -d --build
+```
+
+Allow **3–4 minutes** for all services to be ready. The `gio-gravitee-init` container runs once to import all APIs and configure AM.
 
 ---
 
 ## 📖 How It Works
 
-### Part 1: REST API → AI-Ready Tool with MCP 🔧
+### Part 1: MCP — REST API as AI Tool 🔧
 
-The **RNLI Lifeboat API** is a standard REST API. On its own, an AI agent has no way to know what it does or how to call it. The **Model Context Protocol (MCP)** solves this by providing a standard interface that AI agents can use to *discover* and *call* tools.
+The **RNLI Lifeboat API** is a standard REST API. Gravitee's **MCP Entrypoint** transforms its endpoints into MCP tools that AI agents can discover and call automatically.
 
-Gravitee's **MCP Entrypoint** transforms any REST endpoint into an MCP tool with a single configuration:
-
-```
-REST endpoint:  GET /stations/nearest?location=Brighton
-MCP tool:       findNearestStations({ location: "Brighton" })
-```
-
-The RNLI demo exposes four tools via the Gravitee MCP Server at `/lifeboat-mcp/mcp`:
+The demo exposes four tools via `/lifeboat-mcp/mcp`:
 
 | Tool | Maps to | Description |
 |------|---------|-------------|
@@ -223,144 +184,183 @@ The RNLI demo exposes four tools via the Gravitee MCP Server at `/lifeboat-mcp/m
 | `listStationsByRegion` | `GET /stations?region=` | List stations in a UK/Ireland region |
 | `getVisitedStations` | `GET /history` | Get the user's visited station history |
 
-#### 🔍 Explore with MCP Inspector
-
-Open **[http://localhost:6274](http://localhost:6274)**:
-
-1. Select **"Streamable HTTP"** as the transport
-2. The server URL is pre-filled: `http://gio-apim-gateway:8082/lifeboat-mcp/mcp`
-3. Click **Connect** — you'll see all four tools listed
-4. Click any tool and call it with sample inputs
-
-> **💡 Key Insight:** MCP is a standard protocol. Any MCP-compatible client (Claude Desktop, VS Code, Cursor, custom agents) can use this server to find lifeboat stations.
+**Explore with MCP Inspector** — open [http://localhost:6274](http://localhost:6274), select **Streamable HTTP**, and the URL is pre-filled.
 
 ---
 
 ### Part 2: LLM Proxy 🧠
 
-The agent uses an LLM (via Ollama) to decide *which MCP tool to call* and to *format the response* into natural language. All LLM traffic goes through the Gravitee **LLM Proxy** at `/llm-proxy/`, providing:
-
-- **Single entry point** for all LLM traffic
-- **Observability** — every LLM call is logged and visible in Gravitee's Analytics
-- **Control** — routing, rate limiting, and guard rails can be added without touching agent code using Gravitee's UI
-- **Gateway-level timeout management** — protects against slow LLM responses
-
-You can see all LLM calls in the **APIM Console** at [http://localhost:8084](http://localhost:8084) — navigate to the **LLM Proxy** API → **Analytics**.
+All LLM traffic goes through the Gravitee **LLM Proxy** at `/llm-proxy/`, providing:
+- **Observability** — every LLM call is visible in APIM Analytics
+- **AI Guard Rails** — toxicity classifier blocks harmful prompts before they reach the LLM (threshold: 0.95)
+- **Rate limiting** and **5-minute response caching**
 
 ---
 
 ### Part 3: The AI Agent Loop 🤖
 
-The RNLI agent follows a four-phase reasoning loop for every user query:
-
-```mermaid
-flowchart LR
-    A["🔍 DISCOVER\nFetch MCP tools\nfrom Gravitee"] --> B["🤔 DECIDE\nAsk LLM which\ntool to call"]
-    B --> C["⚡ EXECUTE\nCall tool via\nGravitee MCP"] --> D["💭 REFLECT\nAsk LLM to format\nthe result"]
-    D -.->|"Loop if needed"| A
+```
+Discover tools → Decide which tool → Execute via Gravitee MCP → Reflect and respond
 ```
 
-| Phase | What Happens |
-|-------|--------------|
-| **Discover** | On startup, agent calls `tools/list` on the Gravitee MCP Server |
-| **Decide** | Agent sends user query + tool definitions to LLM via LLM Proxy |
-| **Execute** | Agent calls the chosen tool via `tools/call` on the MCP Server |
-| **Reflect** | Agent sends tool result back to LLM to generate a natural-language answer |
-
-Every call in this loop goes through the **Gravitee Gateway** — all traffic is visible in APIM analytics.
-
-#### Example: "What are the nearest stations to Brighton?"
-
-1. LLM receives the query + tool definitions → decides to call `findNearestStations`
-2. Agent calls `tools/call` → Gravitee routes to `GET /stations/nearest?location=Brighton`
-3. LLM receives station data → formats it into a friendly response with addresses and map links
+Every call goes through the Gravitee Gateway. Ask *"What are the nearest stations to Brighton?"* — watch every step in the AI Agent Inspector.
 
 ---
 
-### Part 4: Authentication & Fine-Grained API Access 🔐
+### Part 4: A2A — Agent-to-Agent 🤝
 
-This demo showcases two complementary access control features.
+Ask *"What are the sea conditions near Poole?"* to see Agent-to-Agent in action:
 
-#### 4a. Authentication — RNLI Data Portal Login
+1. **RNLI A2A Agent** receives the query and recognises it needs sea conditions data
+2. Agent calls the **Sea Conditions Agent** via `/weather-agent/` (routed through Gravitee)
+3. Sea Conditions Agent fetches wave heights, wind speed, swell, and tidal data from open APIs
+4. Sea Conditions Agent publishes the full response to Kafka (`rnli.sea-conditions`, `rnli.tides`)
+5. Response flows back through Gravitee to the RNLI Agent and then to the user
 
-Some data requires authentication. The `/history` endpoint (visited stations) is protected: you need to be logged in to fetch your personal visit history.
+The AI Agent Inspector shows the full A2A call chain. Select the **"A2A Agent Mesh"** scenario in the Inspector for a pre-built animation of this flow.
 
-**How it works:**
+---
 
-1. User logs in via the RNLI website using **Gravitee AM** (OAuth2/OIDC)
-2. AM issues a JWT access token containing user identity and plan claims
-3. The website prefixes the user's chat message with their context: `[USER_CONTEXT:{name, plan, visits}]`
-4. The agent reads this context and personalises its responses
+### Part 5: Kafka Event Streaming 📡
 
-The login is triggered by clicking **Sign In** on the RNLI website — this starts the OAuth2 PKCE flow and redirects to the RNLI-branded AM login form (with decorative social login buttons — demo only). Do not navigate to the AM login URL directly; it requires OAuth2 parameters to work correctly.
+Every sea conditions query and every lifeboat launch publishes to Kafka. Three Gravitee **MESSAGE APIs** expose these topics as live SSE streams.
 
-**Try it:**
+#### Topics
 
-1. Open [http://localhost:8002](http://localhost:8002) and ask *"What stations have I visited?"* — this returns a generic fallback (no identity)
-2. Click **Sign In** and log in with:
-   - Email: `joe.doe@gravitee.io`
-   - Password: `HelloWorld@123`
-3. Ask again — the agent now knows who you are and returns Joe's visit history
+| Topic | Published by | Contains |
+|-------|-------------|---------|
+| `rnli.sea-conditions` | Sea Conditions Agent (on every A2A query) | Full weather data — wave heights, wind, swell, tidal events |
+| `rnli.tides` | Sea Conditions Agent (on every A2A query) | Tidal events only (filtered subset) |
+| `rnli.launches` | Launches Poller (every 30s from RNLI API) | Lifeboat launch events |
 
-#### 4b. Fine-Grained API Access — Bronze / Silver / Gold Tiers
-
-The **RNLI Databricks Stations API** demonstrates gateway-enforced data tiers. Three API plans control what data each caller can see — no backend changes required.
-
-| Tier | Auth Method | Gateway Path | Columns Returned |
-|------|-------------|--------------|-----------------|
-| **Bronze** | None (Keyless) | `POST /databricks-stations/...` | 4 — id, name, type, region |
-| **Silver** | API Key (`X-Gravitee-Api-Key`) | same path + header | 8 — adds country, lat, lon, address |
-| **Gold** | JWT (via Gravitee AM OAuth2) | same path + `Authorization: Bearer` | 12 — adds crew count, launches/year, launch history |
-
-The gateway injects an `X-RNLI-Plan` header before the request reaches the backend, which selects the appropriate data tier. The plan check happens entirely at the gateway — the backend never sees credentials.
-
-**Try it — curl:**
+#### Subscribe to live streams
 
 ```bash
-# Bronze (no auth) — 4 columns
-curl -s -X POST http://localhost:8082/databricks-stations/api/2.0/sql/statements \
-  -H "Content-Type: application/json" \
-  -d '{"statement":"SELECT * FROM stations"}' | python3 -m json.tool
+# Live sea conditions — fires every time someone asks a sea conditions question
+curl -N -H "Accept: text/event-stream" http://localhost:8082/sea-conditions-stream/
 
-# Silver (API key) — 8 columns
+# Tidal events only
+curl -N -H "Accept: text/event-stream" http://localhost:8082/tides-stream/
+
+# Lifeboat launches
+curl -N -H "Accept: text/event-stream" http://localhost:8082/launches-stream/
+```
+
+Then ask *"What are the sea conditions near Poole?"* on the website — the sea-conditions and tides streams fire within seconds.
+
+#### Simulate a launch event (for demo)
+
+The Launches Poller polls the RNLI API every 30 seconds. To simulate a new launch immediately without waiting:
+
+```bash
+curl -X POST "http://localhost:18082/topics/rnli.launches" \
+  -H "Content-Type: application/vnd.kafka.json.v2+json" \
+  -d '{
+    "records":[{
+      "key":"demo-001",
+      "value":{
+        "id":99001,
+        "shortName":"Poole",
+        "title":"Two persons reported in the water off Sandbanks Peninsula",
+        "launchDate":"2026-03-19T17:45:00Z",
+        "lifeboat_IdNo":"B-894",
+        "cOACS":"Cat 1",
+        "website":"https://rnli.org/find-my-nearest/lifeboat-stations/poole-lifeboat-station"
+      }
+    }]
+  }'
+```
+
+Anyone subscribed to `http://localhost:8082/launches-stream/` will receive the event immediately.
+
+#### Browse topics in Redpanda Console
+
+Open **[http://localhost:8086](http://localhost:8086)** — browse `rnli.sea-conditions`, `rnli.tides`, and `rnli.launches`, view messages, and inspect offsets.
+
+#### Pull records directly via Kafka HTTP Proxy
+
+Gravitee also exposes Redpanda's HTTP Proxy at `/kafka-proxy/` for governed REST-based produce/consume:
+
+```bash
+# Consume latest records from sea-conditions topic
+curl "http://localhost:8082/kafka-proxy/topics/rnli.sea-conditions/partitions/0/records?offset=0&count=5" \
+  -H "Accept: application/vnd.kafka.json.v2+json"
+```
+
+#### Note on Native Kafka (port 9094)
+
+The gateway has port 9094 exposed for Gravitee's native Kafka gateway. However, Gravitee's native Kafka routing requires TLS/SNI to identify which API to route a connection to — even in port-routing mode. Without TLS, connections time out at the dispatcher level (`No Kafka acceptor found for SNI null`). This is a known constraint; for a local demo without TLS infrastructure, use the SSE streams or HTTP proxy instead. The SSE streams through Gravitee tell the same governance story (rate limiting, auth, analytics) without TLS complexity.
+
+---
+
+### Part 6: Authentication & Fine-Grained API Access 🔐
+
+#### Authentication — RNLI Data Portal Login
+
+1. Open [http://localhost:8002](http://localhost:8002) and ask *"What stations have I visited?"* — returns a generic fallback
+2. Click **Sign In** and log in with `joe.doe@gravitee.io` / `HelloWorld@123`
+3. Ask again — the agent now knows who you are and returns Joe's visit history
+
+#### Fine-Grained Access — Bronze / Silver / Gold Tiers
+
+| Tier | Auth | Columns |
+|------|------|---------|
+| **Bronze** | None | 4 — id, name, type, region |
+| **Silver** | API Key `X-Gravitee-Api-Key: 592eafe3-fdf4-4a58-aeaf-e3fdf42a586b` | 8 — adds country, lat, lon, address |
+| **Gold** | JWT via OAuth2 login | 12 — adds crew count, launches/year, launch history |
+
+```bash
+# Bronze (no auth)
+curl -s -X POST http://localhost:8082/databricks-stations/api/2.0/sql/statements \
+  -H "Content-Type: application/json" -d '{"statement":"SELECT * FROM stations"}'
+
+# Silver (API key)
 curl -s -X POST http://localhost:8082/databricks-stations/api/2.0/sql/statements \
   -H "Content-Type: application/json" \
   -H "X-Gravitee-Api-Key: 592eafe3-fdf4-4a58-aeaf-e3fdf42a586b" \
-  -d '{"statement":"SELECT * FROM stations"}' | python3 -m json.tool
+  -d '{"statement":"SELECT * FROM stations"}'
 ```
-
-**Demo accounts:**
-
-| User | Credentials | Tier |
-|------|-------------|------|
-| Joe Doe (Gold) | `joe.doe@gravitee.io` / `HelloWorld@123` | JWT via OAuth2 |
-| Silver Subscriber | `silver.user@rnli.org` / `HelloWorld@123` | API Key (auto-provisioned) |
-| Anyone | No credentials | Bronze (Keyless) |
 
 ---
 
-### Part 5: Real-Time Observability — AI Agent Inspector 🔭
+### Part 7: AI Agent Inspector 🔭
 
-The **AI Agent Inspector** at [http://localhost:9002](http://localhost:9002) shows every step of the agent flow as a live sequence diagram, updated in real time as you chat.
+The **AI Agent Inspector** at [http://localhost:9002](http://localhost:9002) shows every step as a live sequence diagram. It receives JSON events from the Gravitee Gateway's built-in **TCP Reporter** — no agent instrumentation required.
 
-It works by receiving JSON events from the Gravitee Gateway's built-in **TCP Reporter**, which streams every request event to the inspector's Node.js server. No agent code changes needed.
-
-**What you see for each query:**
-
-```
-User Request       → Client sends query to Agent Proxy
-LLM Tool Decision  → Agent asks LLM which tool to call (with tool definitions)
-Tool Discovery     → Agent fetches available tools from MCP Server
-Tool Call          → Gravitee routes tool call to Lifeboat API
-LLM Response       → Agent asks LLM to format the tool result
-Agent Response     → Agent returns natural language answer to user
-```
-
-> **💡 This is the full observable A2A loop** — every HTTP call, LLM interaction, and MCP tool call is captured and visualised without any instrumentation in the agent code itself.
+**Scenario picker** (top-right):
+- **MCP Tool Call** — standard lifeboat station query
+- **A2A Agent Mesh** — sea conditions query showing the A2A call chain
+- **Live** — shows actual real-time traffic as it happens
 
 ---
 
-## 🏁 Stopping the Demo
+## 🔧 Gravitee APIs Registered
+
+All APIs are auto-imported by the `gio-gravitee-init` container at startup:
+
+| File | API Name | Type | Path/Port |
+|------|----------|------|-----------|
+| `01-lifeboat-api.json` | RNLI Lifeboat API | PROXY | `/lifeboat-api/` |
+| `02-rnli-agent.json` | RNLI Agent Proxy | PROXY | `/stations-agent/` |
+| `03-llm-proxy.json` | LLM Proxy | LLM_PROXY | `/llm-proxy/` |
+| `04-visited-stations.json` | Visited Stations | PROXY | `/visited-stations/` |
+| `05-lifeboat-mcp.json` | Lifeboat MCP Server | PROXY | `/lifeboat-mcp/` |
+| `06-databricks-stations.json` | Databricks Stations | PROXY | `/databricks-stations/` |
+| `07-weather-agent.json` | Sea Conditions Agent | PROXY | `/weather-agent/` |
+| `08-kafka-proxy.json` | Kafka HTTP Proxy | PROXY | `/kafka-proxy/` |
+| `09-launches-stream.json` | RNLI Launches Stream | MESSAGE | `/launches-stream/` |
+| `10-sea-conditions-stream.json` | Sea Conditions Stream | MESSAGE | `/sea-conditions-stream/` |
+| `11-tides-stream.json` | Tides Stream | MESSAGE | `/tides-stream/` |
+| `12-native-kafka-launches.json` | Launches Native Kafka | NATIVE | port `9094` |
+
+To re-run API registration (e.g. after config changes):
+```bash
+docker compose build gio-gravitee-init && docker compose run --rm gio-gravitee-init
+```
+
+---
+
+## 🏁 Stopping
 
 ```bash
 docker compose down
@@ -368,61 +368,60 @@ docker compose down
 
 ---
 
-## 🎓 Key Takeaways
-
-| Concept | What You Learned |
-|---------|-----------------|
-| **MCP Servers** | Transform REST APIs into AI-discoverable tools at the gateway level |
-| **LLM Proxy** | Centralise, observe, and control all LLM traffic through a single gateway |
-| **Agent Architecture** | Agents follow a Discover → Decide → Execute → Reflect loop |
-| **Authentication** | OAuth2/OIDC protects user-specific data; tokens carry identity and context |
-| **Fine-Grained Access** | Bronze/Silver/Gold API plans enforce data tiers at the gateway with zero backend changes |
-| **Observability** | Every agent step is visible in real time via the TCP Reporter + Agent Inspector |
-
----
-
 ## 🔧 Troubleshooting
 
-### Slow or Timing Out Responses
+### Guard Rails blocking normal queries
 
-**Cause:** LLM inference is running on CPU (slow).
+The toxicity classifier sensitivity is set to `0.95` (in `docker-compose.yml` `GUARD_RAILS_THRESHOLD`). If queries are being blocked, raise it further or re-run `gio-gravitee-init`:
 
-**Fix:** Run Ollama locally instead of in Docker:
 ```bash
-ollama serve
-ollama pull qwen3:0.6b
-```
-Then `docker compose up -d` — the gateway's LLM Proxy will route to `http://host.docker.internal:11434/v1`.
-
-### gravitee-init Fails Mid-Way
-
-The init container runs once. If it fails partway through:
-```bash
-docker compose up -d --force-recreate gio-gravitee-init
+# Edit docker-compose.yml: GUARD_RAILS_THRESHOLD=0.98
+docker compose run --rm gio-gravitee-init
+docker compose restart gio-apim-gateway
 ```
 
-### Gateway Starts Before Agent Inspector
+### Slow or timing out responses
 
-If the gateway starts before `agent-live-graph` is ready, the TCP reporter connection will be retried automatically. The inspector will start receiving events once it's running.
+Run Ollama locally (faster than containerised, especially on Apple Silicon):
+```bash
+ollama serve && ollama pull qwen3:0.6b
+```
+The LLM Proxy routes to `http://host.docker.internal:11434/v1` automatically.
+
+### gravitee-init fails mid-way
+
+Re-run it:
+```bash
+docker compose run --rm gio-gravitee-init
+```
+
+### Kafka SSE stream shows only `retry:` line
+
+That's correct — `retry:` is a standard SSE reconnect directive, not a heartbeat. The stream is live and waiting. Publish an event or trigger a sea conditions query to see data flow.
+
+### Launches Poller not publishing
+
+The RNLI launches API (`services.rnli.org`) may time out from inside Docker (CDN/IP blocking). Use the simulate command above to publish test events directly to Redpanda. The Kafka infrastructure and SSE streams work correctly regardless.
 
 ### Apple Silicon (M1/M2/M3)
 
-This demo is tested and optimised for Apple Silicon. The docker-compose includes:
-- MongoDB healthcheck via TCP (not `mongosh`, which is slow on ARM64)
-- Elasticsearch `start_period: 60s` to allow for slow ARM64 startup
+Tested and optimised for Apple Silicon:
+- MongoDB healthcheck via TCP (not `mongosh`)
+- Elasticsearch `start_period: 60s`
 - Gateway inference timeout `120000ms` for ONNX model warmup
 
 ---
 
 ## 📚 Learn More
 
-- [Model Context Protocol (MCP) Specification](https://modelcontextprotocol.io/)
-- [A2A Protocol Documentation](https://google.github.io/A2A/)
+- [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
+- [A2A Protocol](https://google.github.io/A2A/)
 - [Gravitee AI Agent Mesh](https://www.gravitee.io/)
+- [Redpanda](https://redpanda.com/)
 - [RNLI](https://rnli.org/) — *The Royal National Lifeboat Institution saves lives at sea*
 
 ---
 
 **Happy exploring! 🌊🚀**
 
-Sam 
+Sam
